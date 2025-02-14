@@ -54,14 +54,14 @@ jobs:
       - name: Validate task definition parameters
         run: |
           REQUIRED_KEYS='["family", "taskRoleArn", "executionRoleArn", "networkMode", "containerDefinitions", "requiresCompatibilities", "cpu", "memory"]'
-          INVALID_KEYS=$(jq -r 'keys_unsorted - $REQUIRED_KEYS | .[]' task-definition.json)
-
-          if [ -n "$INVALID_KEYS" ]; then
-            echo "Error: Found invalid parameters in task-definition.json:"
-            echo "$INVALID_KEYS"
-            exit 1
-          fi
-          echo "Task definition parameters validated successfully."
+          jq --argjson REQUIRED_KEYS "$REQUIRED_KEYS" '
+            keys_unsorted as $keys |
+            ($keys - $REQUIRED_KEYS) as $missing |
+            if ($missing | length) > 0 then
+              "Missing keys: \($missing | join(", "))"
+            else
+              "All required keys are present"
+            end' task-definition.json
 
       - name: Register new task definition with updated image
         run: |
