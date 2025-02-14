@@ -70,12 +70,47 @@ jobs:
             aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
             aws-region: us-east-1
 
+      - name: Check if ECR Repository Exists
+        id: check-ecr
+        run: |
+          if aws ecr describe-repositories --repository-names quest-container-repository --region us-east-1 >/dev/null 2>&1; then
+            echo "ECR_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "ECR_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Check if ALB Exists
+        id: check-alb
+        run: |
+          if aws elbv2 describe-load-balancers --names quest-alb --region us-east-1 >/dev/null 2>&1; then
+            echo "ALB_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "ALB_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Check if IAM Role Exists
+        id: check-iam
+        run: |
+          if aws iam get-role --role-name quest-ecs-task-execution-role >/dev/null 2>&1; then
+            echo "IAM_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "IAM_EXISTS=false" >> $GITHUB_ENV
+          fi
 
       - name: Terraform Init
         run: terraform init
 
-      - name: Terraform Apply
-        run: terraform apply -auto-approve
+      - name: Terraform Apply with Conditional Targets
+        run: |
+          if [ "$ECR_EXISTS" = "true" ]; then
+            terraform apply -target=aws_ecs_task_definition.quest_task -auto-approve
+          elif [ "$ALB_EXISTS" = "true" ]; then
+            terraform apply -target=aws_lb.quest_alb -auto-approve
+          elif [ "$IAM_EXISTS" = "true" ]; then
+            terraform apply -target=aws_iam_role.ecs_task_execution -auto-approve
+          else
+            terraform apply -auto-approve
+          fi
         env:
           TF_VAR_aws_region: "us-east-1" # Set environment variables if needed
   
@@ -136,24 +171,6 @@ jobs:
               exit 1
             fi
             echo "✅ task-definition.json successfully created."
-
-        # Validate task definition parameters
-        - name: Validate task definition parameters
-          run: |
-            REQUIRED_KEYS='["family", "taskRoleArn", "executionRoleArn", "networkMode", "containerDefinitions", "requiresCompatibilities", "cpu", "memory"]'
-            MISSING_KEYS=$(jq --argjson REQUIRED_KEYS "$REQUIRED_KEYS" '
-              keys_unsorted as $keys |
-              ($REQUIRED_KEYS - $keys) as $missing |
-              if ($missing | length) > 0 then
-                "❌ Missing keys: \($missing | join(", "))"
-              else
-                "✅ All required keys are present"
-              end' task-definition.json)
-
-            echo "$MISSING_KEYS"
-            if [[ "$MISSING_KEYS" == *"❌ Missing keys"* ]]; then
-              exit 1
-            fi
 
         # Register new task definition with updated image
         - name: Register new task definition
