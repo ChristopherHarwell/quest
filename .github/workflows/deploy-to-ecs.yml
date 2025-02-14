@@ -3,7 +3,7 @@ name: Deploy to AWS ECS
 on:
   push:
     branches:
-      - master  # Runs when code is pushed to main branch
+      - master  # Runs when code is pushed to the main branch
 
 jobs:
   deploy:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Configure AWS Credentials
+      # Configure AWS Credentials (Consider using OIDC instead of access keys)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -47,12 +47,14 @@ jobs:
           CONTAINER_NAME: quest-container
           ECR_IMAGE: ${{ steps.login-ecr.outputs.registry }}/quest-container-repository:latest
         run: |
-          # Get current task definition JSON
-          aws ecs describe-task-definition --task-definition $ECS_TASK_DEFINITION --query "taskDefinition.{family: family, taskRoleArn: taskRoleArn, executionRoleArn: executionRoleArn, networkMode: networkMode, containerDefinitions: containerDefinitions, requiresCompatibilities: requiresCompatibilities, cpu: cpu, memory: memory}"
+          # Get the current task definition and save it to a file
+          aws ecs describe-task-definition --task-definition $ECS_TASK_DEFINITION --output json > task-definition.json
 
-          # Register new task definition with updated image
-          jq --arg IMG "$ECR_IMAGE" '.containerDefinitions[0].image = $IMG' task-definition.json > new-task-def.json
+          # Update the task definition with the new image
+          jq --arg IMG "$ECR_IMAGE" '.taskDefinition | .containerDefinitions[0].image = $IMG' task-definition.json > new-task-def.json
+
+          # Register the updated task definition
           TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text)
 
-          # Update ECS Service with new task definition
+          # Update the ECS Service with the new task definition
           aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $TASK_DEF_ARN
