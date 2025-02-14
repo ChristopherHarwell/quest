@@ -9,6 +9,9 @@ jobs:
   deploy:
     name: Build and Deploy to ECS
     runs-on: ubuntu-latest
+    needs:
+      - terraform-ci-cd
+      - tfsec
 
     steps:
       # Checkout the repository
