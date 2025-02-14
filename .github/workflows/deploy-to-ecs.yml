@@ -7,110 +7,107 @@ on:
 
 jobs:
   deploy:
-    name: Build and Deploy to ECS
-    runs-on: ubuntu-latest
-    needs:
-      - terraform-ci-cd
-      - tfsec
+      name: Build and Deploy to ECS
+      runs-on: ubuntu-latest
 
-    steps:
-      # Checkout the repository
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      steps:
+        # Checkout the repository
+        - name: Checkout repository
+          uses: actions/checkout@v4
 
-      # Configure AWS Credentials (Consider using OIDC instead of access keys)
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+        # Configure AWS Credentials (Consider using OIDC instead of access keys)
+        - name: Configure AWS credentials
+          uses: aws-actions/configure-aws-credentials@v2
+          with:
+            aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+            aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            aws-region: us-east-1
 
-      # Retrieve ECS Cluster Name
-      - name: Get ECS Cluster Name
-        id: get-cluster
-        run: |
-          ECS_CLUSTER=$(aws ecs list-clusters --query "clusterArns[0]" --output text --region us-east-1)
-          echo "ECS_CLUSTER=$ECS_CLUSTER" >> $GITHUB_ENV
-          echo "::set-output name=cluster::$ECS_CLUSTER"
+        # Retrieve ECS Cluster Name
+        - name: Get ECS Cluster Name
+          id: get-cluster
+          run: |
+            ECS_CLUSTER=$(aws ecs list-clusters --query "clusterArns[0]" --output text --region us-east-1)
+            echo "ECS_CLUSTER=$ECS_CLUSTER" >> $GITHUB_ENV
+            echo "::set-output name=cluster::$ECS_CLUSTER"
 
-      # Log in to Amazon ECR
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        # Log in to Amazon ECR
+        - name: Log in to Amazon ECR
+          id: login-ecr
+          uses: aws-actions/amazon-ecr-login@v1
 
-      # Build, Tag, and Push Docker Image to ECR
-      - name: Build and Push Docker Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: quest-container-repository
-          IMAGE_TAG: latest
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "ECR_IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+        # Build, Tag, and Push Docker Image to ECR
+        - name: Build and Push Docker Image
+          env:
+            ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+            ECR_REPOSITORY: quest-container-repository
+            IMAGE_TAG: latest
+          run: |
+            docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+            docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            echo "ECR_IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
-      # Get current ECS Task Definition
-      - name: Get current task definition
-        run: |
-          aws ecs describe-task-definition --task-definition quest-task \
-            --query "taskDefinition.{family: family, taskRoleArn: taskRoleArn, executionRoleArn: executionRoleArn, networkMode: networkMode, containerDefinitions: containerDefinitions, requiresCompatibilities: requiresCompatibilities, cpu: cpu, memory: memory}" > task-definition.json
+        # Get current ECS Task Definition
+        - name: Get current task definition
+          run: |
+            aws ecs describe-task-definition --task-definition quest-task \
+              --query "taskDefinition.{family: family, taskRoleArn: taskRoleArn, executionRoleArn: executionRoleArn, networkMode: networkMode, containerDefinitions: containerDefinitions, requiresCompatibilities: requiresCompatibilities, cpu: cpu, memory: memory}" > task-definition.json
 
-      # Validate task-definition.json exists
-      - name: Validate task-definition.json exists
-        run: |
-          if [ ! -f task-definition.json ]; then
-            echo "❌ Error: task-definition.json not found!"
-            exit 1
-          fi
-          echo "✅ task-definition.json successfully created."
+        # Validate task-definition.json exists
+        - name: Validate task-definition.json exists
+          run: |
+            if [ ! -f task-definition.json ]; then
+              echo "❌ Error: task-definition.json not found!"
+              exit 1
+            fi
+            echo "✅ task-definition.json successfully created."
 
-      # Validate task definition parameters
-      - name: Validate task definition parameters
-        run: |
-          REQUIRED_KEYS='["family", "taskRoleArn", "executionRoleArn", "networkMode", "containerDefinitions", "requiresCompatibilities", "cpu", "memory"]'
-          MISSING_KEYS=$(jq --argjson REQUIRED_KEYS "$REQUIRED_KEYS" '
-            keys_unsorted as $keys |
-            ($REQUIRED_KEYS - $keys) as $missing |
-            if ($missing | length) > 0 then
-              "❌ Missing keys: \($missing | join(", "))"
-            else
-              "✅ All required keys are present"
-            end' task-definition.json)
+        # Validate task definition parameters
+        - name: Validate task definition parameters
+          run: |
+            REQUIRED_KEYS='["family", "taskRoleArn", "executionRoleArn", "networkMode", "containerDefinitions", "requiresCompatibilities", "cpu", "memory"]'
+            MISSING_KEYS=$(jq --argjson REQUIRED_KEYS "$REQUIRED_KEYS" '
+              keys_unsorted as $keys |
+              ($REQUIRED_KEYS - $keys) as $missing |
+              if ($missing | length) > 0 then
+                "❌ Missing keys: \($missing | join(", "))"
+              else
+                "✅ All required keys are present"
+              end' task-definition.json)
 
-          echo "$MISSING_KEYS"
-          if [[ "$MISSING_KEYS" == *"❌ Missing keys"* ]]; then
-            exit 1
-          fi
+            echo "$MISSING_KEYS"
+            if [[ "$MISSING_KEYS" == *"❌ Missing keys"* ]]; then
+              exit 1
+            fi
 
-      # Register new task definition with updated image
-      - name: Register new task definition
-        id: register-task
-        run: |
-          jq --arg IMG "$ECR_IMAGE" '
-            .containerDefinitions[0].image = $IMG |
-            .taskRoleArn = if .taskRoleArn == null then "" else .taskRoleArn end
-          ' task-definition.json > new-task-def.json
+        # Register new task definition with updated image
+        - name: Register new task definition
+          id: register-task
+          run: |
+            jq --arg IMG "$ECR_IMAGE" '
+              .containerDefinitions[0].image = $IMG |
+              .taskRoleArn = if .taskRoleArn == null then "" else .taskRoleArn end
+            ' task-definition.json > new-task-def.json
 
-          TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
-          echo "::set-output name=taskDefinitionArn::$TASK_DEF_ARN"
+            TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text)
+            echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
+            echo "::set-output name=taskDefinitionArn::$TASK_DEF_ARN"
 
-      # Update ECS Service with new task definition
-      - name: Update ECS Service
-        env:
-          ECS_CLUSTER: ${{ steps.get-cluster.outputs.cluster }}
-          ECS_SERVICE: quest-service
-          TASK_DEF_ARN: ${{ steps.register-task.outputs.taskDefinitionArn }}
-        run: |
-          if [ -z "$ECS_CLUSTER" ] || [ -z "$ECS_SERVICE" ] || [ -z "$TASK_DEF_ARN" ]; then
-            echo "❌ Error: One or more required environment variables are missing."
-            exit 1
-          fi
+        # Update ECS Service with new task definition
+        - name: Update ECS Service
+          env:
+            ECS_CLUSTER: ${{ steps.get-cluster.outputs.cluster }}
+            ECS_SERVICE: quest-service
+            TASK_DEF_ARN: ${{ steps.register-task.outputs.taskDefinitionArn }}
+          run: |
+            if [ -z "$ECS_CLUSTER" ] || [ -z "$ECS_SERVICE" ] || [ -z "$TASK_DEF_ARN" ]; then
+              echo "❌ Error: One or more required environment variables are missing."
+              exit 1
+            fi
 
-          echo "✅ Updating ECS Service..."
-          echo "ECS_CLUSTER: $ECS_CLUSTER"
-          echo "ECS_SERVICE: $ECS_SERVICE"
-          echo "TASK_DEF_ARN: $TASK_DEF_ARN"
+            echo "✅ Updating ECS Service..."
+            echo "ECS_CLUSTER: $ECS_CLUSTER"
+            echo "ECS_SERVICE: $ECS_SERVICE"
+            echo "TASK_DEF_ARN: $TASK_DEF_ARN"
 
-          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$TASK_DEF_ARN"
+            aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$TASK_DEF_ARN"
