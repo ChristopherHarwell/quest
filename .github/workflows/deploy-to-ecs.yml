@@ -25,7 +25,7 @@ jobs:
 
       # Retrieve ECS Cluster Name
       - name: Get ECS Cluster Name
-        id: ecr-cluster
+        id: get-cluster
         run: |
           ECS_CLUSTER=$(aws ecs list-clusters --query "clusterArns[0]" --output text --region us-east-1)
           echo "ECS_CLUSTER=$ECS_CLUSTER" >> $GITHUB_ENV
@@ -45,42 +45,58 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "ECR_IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
+      # Get current ECS Task Definition
       - name: Get current task definition
         run: |
-          aws ecs describe-task-definition --task-definition quest-task:1 \
+          aws ecs describe-task-definition --task-definition quest-task \
             --query "taskDefinition.{family: family, taskRoleArn: taskRoleArn, executionRoleArn: executionRoleArn, networkMode: networkMode, containerDefinitions: containerDefinitions, requiresCompatibilities: requiresCompatibilities, cpu: cpu, memory: memory}" > task-definition.json
 
+      # Validate task-definition.json exists
       - name: Validate task-definition.json exists
         run: |
           if [ ! -f task-definition.json ]; then
-            echo "Error: task-definition.json not found!"
+            echo "❌ Error: task-definition.json not found!"
             exit 1
           fi
-          echo "task-definition.json successfully created."
+          echo "✅ task-definition.json successfully created."
 
+      # Validate task definition parameters
       - name: Validate task definition parameters
         run: |
           REQUIRED_KEYS='["family", "taskRoleArn", "executionRoleArn", "networkMode", "containerDefinitions", "requiresCompatibilities", "cpu", "memory"]'
-          jq --argjson REQUIRED_KEYS "$REQUIRED_KEYS" '
+          MISSING_KEYS=$(jq --argjson REQUIRED_KEYS "$REQUIRED_KEYS" '
             keys_unsorted as $keys |
-            ($keys - $REQUIRED_KEYS) as $missing |
+            ($REQUIRED_KEYS - $keys) as $missing |
             if ($missing | length) > 0 then
-              "Missing keys: \($missing | join(", "))"
+              "❌ Missing keys: \($missing | join(", "))"
             else
-              "All required keys are present"
-            end' task-definition.json
+              "✅ All required keys are present"
+            end' task-definition.json)
 
-      - name: Register new task definition with updated image
+          echo "$MISSING_KEYS"
+          if [[ "$MISSING_KEYS" == *"❌ Missing keys"* ]]; then
+            exit 1
+          fi
+
+      # Register new task definition with updated image
+      - name: Register new task definition
+        id: register-task
         run: |
           jq --arg IMG "$ECR_IMAGE" '
             .containerDefinitions[0].image = $IMG |
             .taskRoleArn = if .taskRoleArn == null then "" else .taskRoleArn end
           ' task-definition.json > new-task-def.json
 
+          TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
+          echo "::set-output name=taskDefinitionArn::$TASK_DEF_ARN"
+
+      # Update ECS Service with new task definition
       - name: Update ECS Service
         env:
-          ECS_CLUSTER: ${{ steps.ecr-cluster.outputs.cluster }}
+          ECS_CLUSTER: ${{ steps.get-cluster.outputs.cluster }}
           ECS_SERVICE: quest-service
           TASK_DEF_ARN: ${{ steps.register-task.outputs.taskDefinitionArn }}
         run: |
@@ -88,7 +104,7 @@ jobs:
             echo "❌ Error: One or more required environment variables are missing."
             exit 1
           fi
-          
+
           echo "✅ Updating ECS Service..."
           echo "ECS_CLUSTER: $ECS_CLUSTER"
           echo "ECS_SERVICE: $ECS_SERVICE"
