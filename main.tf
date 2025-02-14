@@ -60,14 +60,14 @@ resource "aws_ecs_task_definition" "quest_task" {
   family                   = "quest-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+  execution_role_arn       = length(aws_iam_role.ecs_task_execution) > 0 ? aws_iam_role.ecs_task_execution[0].arn : ""
   cpu                      = 256
   memory                   = 512
 
   container_definitions = jsonencode([
     {
       name      = "quest-container"
-      image     = "${aws_ecr_repository.quest_container_repo.repository_url}:latest"
+      image     = length(aws_ecr_repository.quest_container_repo) > 0 ? "${aws_ecr_repository.quest_container_repo[0].repository_url}:latest" : "418272762224.dkr.ecr.us-east-1.amazonaws.com/quest-container-repository"
       essential = true
       memory    = 128
       portMappings = [
@@ -80,7 +80,7 @@ resource "aws_ecs_task_definition" "quest_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.quest_task_logs.name
+          awslogs-group         = length(aws_cloudwatch_log_group.quest_task_logs) > 0 ? aws_cloudwatch_log_group.quest_task_logs[0].name : ""
           awslogs-region        = var.aws_region
           awslogs-stream-prefix = "ecs"
         }
@@ -153,7 +153,7 @@ resource "aws_lb_target_group" "quest_tg" {
 
 # HTTP Listener
 resource "aws_lb_listener" "http_listener" {
-  load_balancer_arn = aws_lb.quest_alb.arn
+  load_balancer_arn = length(aws_lb.quest_alb) > 0 ? aws_lb.quest_alb[0].arn : ""
   port              = 80
   protocol          = "HTTP"
 
@@ -240,7 +240,7 @@ resource "aws_iam_role" "ecs_task_execution" {
 }
 
 resource "aws_iam_role_policy" "ecs_execution_policy" {
-  role = aws_iam_role.ecs_task_execution.name
+  role = length(aws_iam_role.ecs_task_execution) > 0 ? one(aws_iam_role.ecs_task_execution[*].name) : null
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -301,5 +301,5 @@ variable "aws_region" {
 # -----------------------------
 output "alb_dns_name" {
   description = "Load Balancer DNS Name"
-  value       = aws_lb.quest_alb.dns_name
+  value       = length(aws_lb.quest_alb) > 0 ? aws_lb.quest_alb[0].dns_name : ""
 }
