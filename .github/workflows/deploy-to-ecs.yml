@@ -23,6 +23,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+      # Retrieve ECS Cluster Name
+      - name: Get ECS Cluster Name
+        id: ecr-cluster
+        run: |
+          ECS_CLUSTER=$(aws ecs list-clusters --query "clusterArns[0]" --output text --region us-east-1)
+          echo "ECS_CLUSTER=$ECS_CLUSTER" >> $GITHUB_ENV
+          echo "::set-output name=cluster::$ECS_CLUSTER"
+
       # Log in to Amazon ECR
       - name: Log in to Amazon ECR
         id: login-ecr
@@ -70,6 +78,20 @@ jobs:
             .taskRoleArn = if .taskRoleArn == null then "" else .taskRoleArn end
           ' task-definition.json > new-task-def.json
 
-      - name: Update ECS Service with new task definition
+      - name: Update ECS Service
+        env:
+          ECS_CLUSTER: ${{ steps.ecr-cluster.outputs.cluster }}
+          ECS_SERVICE: quest-service
+          TASK_DEF_ARN: ${{ steps.register-task.outputs.taskDefinitionArn }}
         run: |
-          aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $TASK_DEF_ARN
+          if [ -z "$ECS_CLUSTER" ] || [ -z "$ECS_SERVICE" ] || [ -z "$TASK_DEF_ARN" ]; then
+            echo "❌ Error: One or more required environment variables are missing."
+            exit 1
+          fi
+          
+          echo "✅ Updating ECS Service..."
+          echo "ECS_CLUSTER: $ECS_CLUSTER"
+          echo "ECS_SERVICE: $ECS_SERVICE"
+          echo "TASK_DEF_ARN: $TASK_DEF_ARN"
+
+          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$TASK_DEF_ARN"
