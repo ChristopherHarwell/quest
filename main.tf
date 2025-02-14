@@ -50,8 +50,7 @@ resource "aws_ecr_repository" "quest_container_repo" {
   lifecycle {
     prevent_destroy = true
   }
-
-  count = length(data.aws_ecr_repository.existing_repo.repository_arn) > 0 ? 0 : 1
+  count = length(data.aws_ecr_repository.existing_repo.repository_url) > 0 ? 0 : 1
 }
 
 # -----------------------------
@@ -116,6 +115,10 @@ resource "aws_ecs_service" "quest_service" {
 # -----------------------------
 # Application Load Balancer (ALB)
 # -----------------------------
+data "aws_lb" "existing_lb" {
+  name = "quest-alb"
+}
+
 resource "aws_lb" "quest_alb" {
   name               = "quest-alb"
   internal           = false
@@ -208,6 +211,10 @@ resource "aws_security_group" "ecs_sg" {
 # -----------------------------
 # IAM Roles & Policies for ECS
 # -----------------------------
+data "aws_iam_role" "existing_execution_role" {
+  name = "quest-ecs-task-execution-role"
+}
+
 resource "aws_iam_role" "ecs_task_execution" {
   name = "quest-ecs-task-execution-role"
 
