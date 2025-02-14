@@ -23,15 +23,35 @@ resource "aws_ecs_cluster" "quest_ecs" {
 # -----------------------------
 # CloudWatch Log Group
 # -----------------------------
+data "aws_cloudwatch_log_group" "existing_log_group" {
+  name = "quest-ecs-task-logs"
+}
+
 resource "aws_cloudwatch_log_group" "quest_task_logs" {
   name = "quest-ecs-task-logs"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  count = length(data.aws_cloudwatch_log_group.existing_log_group.name) > 0 ? 0 : 1
 }
 
 # -----------------------------
 # Elastic Container Registry (ECR)
 # -----------------------------
+data "aws_ecr_repository" "existing_repo" {
+  name = "quest-container-repository"
+}
+
 resource "aws_ecr_repository" "quest_container_repo" {
   name = "quest-container-repository"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  count = length(data.aws_ecr_repository.existing_repo.repository_arn) > 0 ? 0 : 1
 }
 
 # -----------------------------
@@ -102,6 +122,12 @@ resource "aws_lb" "quest_alb" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
   subnets            = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  count = length(data.aws_lb.existing_lb.arn) > 0 ? 0 : 1
 }
 
 # Target Group for Load Balancer
@@ -197,6 +223,13 @@ resource "aws_iam_role" "ecs_task_execution" {
       }
     ]
   })
+
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  count = length(data.aws_iam_role.existing_execution_role.arn) > 0 ? 0 : 1
 }
 
 resource "aws_iam_role_policy" "ecs_execution_policy" {
