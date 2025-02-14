@@ -23,9 +23,6 @@ resource "aws_ecs_cluster" "quest_ecs" {
 # -----------------------------
 # CloudWatch Log Group
 # -----------------------------
-data "aws_cloudwatch_log_group" "existing_log_group" {
-  name = "quest-ecs-task-logs" # Looks for a log group with this exact name
-}
 
 resource "aws_cloudwatch_log_group" "quest_task_logs" {
   name = "quest-ecs-task-logs" # Name for the log group to be created
@@ -34,19 +31,19 @@ resource "aws_cloudwatch_log_group" "quest_task_logs" {
     prevent_destroy = false # Protects the log group from accidental deletion
   }
 
-  count = length(data.aws_cloudwatch_log_group.existing_log_group.name) > 0 ? 0 : 1
+  # count = length(data.aws_cloudwatch_log_group.existing_log_group.name) > 0 ? 0 : 1
 }
 
 
 # -----------------------------
 # Elastic Container Registry (ECR)
 # -----------------------------
-data "aws_ecr_repository" "existing_repo" {
-  name = "quest-container-repository" # Looks up an ECR repo with this exact name
-}
+# data "aws_ecr_repository" "existing_repo" {
+#   name = "quest-container-repository" # Looks up an ECR repo with this exact name
+# }
 
 resource "aws_ecr_repository" "quest_container_repo" {
-  name = "quest-container-repository-priv" # Name for the ECR repository
+  name = "quest-container-repository" # Name for the ECR repository
 
   force_delete = true
 
@@ -58,21 +55,25 @@ resource "aws_ecr_repository" "quest_container_repo" {
     prevent_destroy = false # If set to true:
   }
 
-  count = length(data.aws_ecr_repository.existing_repo.repository_url) > 0 ? 0 : 1
+  # count = length(data.aws_ecr_repository.existing_repo.repository_url) > 0 ? 0 : 1
 }
 
 resource "aws_ecr_repository_policy" "ecr_repo_policy" {
+  # repository = aws_ecr_repository.quest_container_repo[0].name
   repository = aws_ecr_repository.quest_container_repo.name
 
+  # count = length(aws_ecr_repository.quest_container_repo) > 0 ? 1 : 0
+
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow"
+        Effect = "Allow",
         Principal = {
           AWS = aws_iam_role.ecs_task_execution.arn
-        }
+        },
         Action = [
+          "ecr:GetAuthorizationToken",
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage"
@@ -97,10 +98,11 @@ resource "aws_ecs_task_definition" "quest_task" {
 
   container_definitions = jsonencode([
     {
-      name  = "quest-container"
-      image = "${aws_ecr_repository.quest_container_repo.repository_url}:latest"
+      name = "quest-container"
+      # Fix the image reference
+      image     = "${aws_ecr_repository.quest_container_repo.repository_url}:latest"
       essential = true
-      memory = 128
+      memory    = 128
       portMappings = [
         {
           containerPort = 3000
@@ -111,15 +113,23 @@ resource "aws_ecs_task_definition" "quest_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group = aws_cloudwatch_log_group.quest_task_logs.name
-          awslogs-region = var.aws_region
+          # Fix the log group reference
+          awslogs-group = coalesce(
+            try(aws_cloudwatch_log_group.quest_task_logs.name, ""),
+            aws_cloudwatch_log_group.quest_task_logs.name
+          )
+          awslogs-region        = var.aws_region
           awslogs-stream-prefix = "ecs"
         }
       }
     }
   ])
+  # Add depends_on to ensure resources exist before task definition is created
+  depends_on = [
+    aws_ecr_repository.quest_container_repo,
+    aws_cloudwatch_log_group.quest_task_logs
+  ]
 }
-
 
 # -----------------------------
 # ECS Service
@@ -157,9 +167,9 @@ resource "aws_ecs_service" "quest_service" {
 # -----------------------------
 # Application Load Balancer (ALB)
 # -----------------------------
-data "aws_lb" "existing_lb" {
-  name = "quest-alb"
-}
+# data "aws_lb" "existing_lb" {
+#   name = "quest-alb"
+# }
 
 resource "aws_lb" "quest_alb" {
   name               = "quest-alb"                                                  # Name of the ALB
@@ -171,7 +181,7 @@ resource "aws_lb" "quest_alb" {
   lifecycle {
     prevent_destroy = false # Prevents terraform destroy from removing this ALB
   }
-  count = length(data.aws_lb.existing_lb.arn) > 0 ? 0 : 1
+  # count = length(data.aws_lb.existing_lb.arn) > 0 ? 0 : 1
 }
 
 resource "aws_lb_target_group" "quest_tg" {
@@ -192,7 +202,7 @@ resource "aws_lb_target_group" "quest_tg" {
 }
 
 resource "aws_lb_listener" "http_listener" {
-  load_balancer_arn = coalesce(try(aws_lb.quest_alb[0].arn, ""), data.aws_lb.existing_lb.arn)
+  load_balancer_arn = aws_lb.quest_alb.arn
   port              = 80
   protocol          = "HTTP"
 
@@ -246,7 +256,7 @@ resource "aws_security_group" "ecs_sg" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] 
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
@@ -254,9 +264,6 @@ resource "aws_security_group" "ecs_sg" {
 # -----------------------------
 # Application Load Balancer (ALB)
 # -----------------------------
-data "aws_iam_role" "existing_execution_role" {
-  name = "quest-ecs-task-execution-role"
-}
 
 resource "aws_iam_role" "ecs_task_execution" {
   name = "ecsTaskExecutionRole"
@@ -264,9 +271,9 @@ resource "aws_iam_role" "ecs_task_execution" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
+      Effect    = "Allow"
       Principal = { Service = "ecs-tasks.amazonaws.com" }
-      Action = "sts:AssumeRole"
+      Action    = "sts:AssumeRole"
     }]
   })
 }
@@ -301,7 +308,9 @@ resource "aws_iam_role_policy_attachment" "ecs_admin_access" {
 }
 
 resource "aws_vpc" "quest_vpc" {
-  cidr_block = "10.0.0.0/16"
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
 }
 
 data "aws_availability_zones" "available" {}
@@ -337,23 +346,7 @@ resource "aws_vpc_endpoint" "ecr_api" {
   vpc_endpoint_type   = "Interface"
   security_group_ids  = [aws_security_group.ecs_sg.id]
   subnet_ids          = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id]
-  private_dns_enabled = true
-}
-
-resource "aws_vpc_endpoint" "ecr_dkr" {
-  vpc_id              = aws_vpc.quest_vpc.id
-  service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
-  vpc_endpoint_type   = "Interface"
-  security_group_ids  = [aws_security_group.ecs_sg.id]
-  subnet_ids          = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id]
-  private_dns_enabled = true
-}
-
-resource "aws_vpc_endpoint" "s3" {
-  vpc_id            = aws_vpc.quest_vpc.id
-  service_name      = "com.amazonaws.${var.aws_region}.s3"
-  vpc_endpoint_type = "Gateway"
-  route_table_ids   = [aws_route_table.quest_rt.id]
+  private_dns_enabled = false
 }
 
 # -----------------------------
@@ -362,6 +355,7 @@ resource "aws_vpc_endpoint" "s3" {
 variable "aws_region" {
   description = "AWS region for deployment"
   type        = string
+  default     = "us-east-1"
 }
 
 # -----------------------------
@@ -370,5 +364,5 @@ variable "aws_region" {
 
 output "alb_dns_name" {
   description = "Load Balancer DNS Name"
-  value = coalesce(try(aws_lb.quest_alb[0].dns_name, ""), data.aws_lb.existing_lb.dns_name)
+  value       = aws_lb.quest_alb.dns_name
 }
