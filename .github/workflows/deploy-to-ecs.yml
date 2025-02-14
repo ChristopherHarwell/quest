@@ -65,8 +65,10 @@ jobs:
 
       - name: Register new task definition with updated image
         run: |
-          jq --arg IMG "$ECR_IMAGE" '.containerDefinitions[0].image = $IMG' task-definition.json > new-task-def.json
-          TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          jq --arg IMG "$ECR_IMAGE" '
+            .containerDefinitions[0].image = $IMG |
+            .taskRoleArn = if .taskRoleArn == null then "" else .taskRoleArn end
+          ' task-definition.json > new-task-def.json
 
       - name: Update ECS Service with new task definition
         run: |
