@@ -40,9 +40,8 @@ jobs:
 
       - name: Get current task definition
         run: |
-          aws ecs describe-task-definition --task-definition $ECS_TASK_DEFINITION \
-          --query 'taskDefinition.{family:family, taskRoleArn:taskRoleArn, executionRoleArn:executionRoleArn, networkMode:networkMode, containerDefinitions:containerDefinitions, requiresCompatibilities:requiresCompatibilities, cpu:cpu, memory:memory}' \
-          --output json > task-definition.json
+          aws ecs describe-task-definition --task-definition quest-task:1 \
+            --query "taskDefinition.{family: family, taskRoleArn: taskRoleArn, executionRoleArn: executionRoleArn, networkMode: networkMode, containerDefinitions: containerDefinitions, requiresCompatibilities: requiresCompatibilities, cpu: cpu, memory: memory}" > task-definition.json
 
       - name: Validate task-definition.json exists
         run: |
