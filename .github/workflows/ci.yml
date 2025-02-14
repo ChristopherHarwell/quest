@@ -74,6 +74,8 @@ jobs:
   deploy:
       name: Build and Deploy to ECS
       runs-on: ubuntu-latest
+      needs:
+        - terraform-apply
 
       steps:
         # Checkout the repository
