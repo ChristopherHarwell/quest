@@ -9,6 +9,8 @@ jobs:
   terraform-lint:
     name: Lint and Format Terraform
     runs-on: ubuntu-latest
+    needs:
+      - tfsec
 
     steps:
       - name: Checkout Repository
