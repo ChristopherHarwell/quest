@@ -48,7 +48,7 @@ jobs:
           ECR_IMAGE: ${{ steps.login-ecr.outputs.registry }}/quest-container-repository:latest
         run: |
           # Get current task definition JSON
-          aws ecs describe-task-definition --task-definition $ECS_TASK_DEFINITION --query taskDefinition > task-definition.json
+          aws ecs describe-task-definition --task-definition $ECS_TASK_DEFINITION --query "taskDefinition | {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions, requiresCompatibilities, cpu, memory}" > task-definition.json
 
           # Register new task definition with updated image
           jq --arg IMG "$ECR_IMAGE" '.containerDefinitions[0].image = $IMG' task-definition.json > new-task-def.json
