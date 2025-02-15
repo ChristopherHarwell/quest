@@ -1,105 +1,74 @@
 terraform {
-  required_version = ">= 1.0.0"
-
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "5.86.1" # Pinning the AWS provider version ensures compatibility and prevents unexpected behavior due to provider updates.
+      version = "5.86.1"
     }
   }
 }
 
 provider "aws" {
-  alias  = "us-east-1"
-  region = "us-east-1" # The AWS provider configuration ensures all Terraform resources are deployed in the specified AWS region.
+  region  = var.aws_region
+  profile = "default"
 }
 
-
+# -----------------------------
+# ECS Cluster
+# -----------------------------
 resource "aws_ecs_cluster" "quest_ecs" {
   name = "quest-ecs-cluster"
 }
 
-
 # -----------------------------
 # CloudWatch Log Group
 # -----------------------------
-
 resource "aws_cloudwatch_log_group" "quest_task_logs" {
-  name = "quest-ecs-task-logs" # Name for the log group to be created
-
-  lifecycle {
-    prevent_destroy = false # Protects the log group from accidental deletion
-  }
-
-  # count = length(data.aws_cloudwatch_log_group.existing_log_group.name) > 0 ? 0 : 1
+  name = "quest-ecs-task-logs"
 }
-
 
 # -----------------------------
 # Elastic Container Registry (ECR)
 # -----------------------------
-# data "aws_ecr_repository" "existing_repo" {
-#   name = "quest-container-repository" # Looks up an ECR repo with this exact name
-# }
-
 resource "aws_ecr_repository" "quest_container_repo" {
-  name = "quest-container-repository" # Name for the ECR repository
-
-  force_delete = true
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-
-  lifecycle {
-    prevent_destroy = false # If set to true:
-  }
-
-  # count = length(data.aws_ecr_repository.existing_repo.repository_url) > 0 ? 0 : 1
+  name = "quest-container-repository"
 }
 
-resource "aws_ecr_repository_policy" "ecr_repo_policy" {
-  # repository = aws_ecr_repository.quest_container_repo[0].name
+resource "aws_ecr_repository_policy" "quest_ecr_policy" {
   repository = aws_ecr_repository.quest_container_repo.name
 
-  # count = length(aws_ecr_repository.quest_container_repo) > 0 ? 1 : 0
-
   policy = jsonencode({
-    Version = "2012-10-17",
+    Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow",
-        Principal = {
-          AWS = aws_iam_role.ecs_task_execution.arn
-        },
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
+        Effect    = "Allow"
+        Principal = { "AWS" : aws_iam_role.ecs_task_execution.arn }
+        Action    = [
           "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage"
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:DescribeRepositories",
+          "ecr:GetRepositoryPolicy"
         ]
       }
     ]
   })
 }
 
+
 # -----------------------------
 # ECS Task Definition
 # -----------------------------
-
 resource "aws_ecs_task_definition" "quest_task" {
   family                   = "quest-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task_execution.arn
   cpu                      = 256
   memory                   = 512
 
   container_definitions = jsonencode([
     {
-      name = "quest-container"
-      # Fix the image reference
+      name      = "quest-container"
       image     = "${aws_ecr_repository.quest_container_repo.repository_url}:latest"
       essential = true
       memory    = 128
@@ -113,77 +82,50 @@ resource "aws_ecs_task_definition" "quest_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          # Fix the log group reference
-          awslogs-group = coalesce(
-            try(aws_cloudwatch_log_group.quest_task_logs.name, ""),
-            aws_cloudwatch_log_group.quest_task_logs.name
-          )
+          awslogs-group         = aws_cloudwatch_log_group.quest_task_logs.name
           awslogs-region        = var.aws_region
           awslogs-stream-prefix = "ecs"
         }
       }
     }
   ])
-  # Add depends_on to ensure resources exist before task definition is created
-  depends_on = [
-    aws_ecr_repository.quest_container_repo,
-    aws_cloudwatch_log_group.quest_task_logs
-  ]
 }
 
 # -----------------------------
 # ECS Service
 # -----------------------------
-
 resource "aws_ecs_service" "quest_service" {
-  name = "quest-service"
-
-  cluster = aws_ecs_cluster.quest_ecs.id
-
+  name            = "quest-service"
+  cluster         = aws_ecs_cluster.quest_ecs.id
   task_definition = aws_ecs_task_definition.quest_task.arn
-
-  launch_type = "FARGATE"
-
-  desired_count = 1
+  launch_type     = "FARGATE"
+  desired_count   = 1
 
   network_configuration {
-    subnets = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id]
-
-    security_groups = [aws_security_group.ecs_sg.id]
-
+    subnets          = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id]
+    security_groups  = [aws_security_group.ecs_sg.id]
     assign_public_ip = true
   }
 
   load_balancer {
     target_group_arn = aws_lb_target_group.quest_tg.arn
-
-    container_name = "quest-container"
-
-    container_port = 3000
+    container_name   = "quest-container"
+    container_port   = 3000
   }
 }
-
 
 # -----------------------------
 # Application Load Balancer (ALB)
 # -----------------------------
-# data "aws_lb" "existing_lb" {
-#   name = "quest-alb"
-# }
-
 resource "aws_lb" "quest_alb" {
-  name               = "quest-alb"                                                  # Name of the ALB
-  internal           = false                                                        # External facing ALB (public)
-  load_balancer_type = "application"                                                # Specifies ALB type (vs Network LB)
-  security_groups    = [aws_security_group.alb_sg.id]                               # Attaches security group
-  subnets            = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id] # Places ALB in these subnets
-
-  lifecycle {
-    prevent_destroy = false # Prevents terraform destroy from removing this ALB
-  }
-  # count = length(data.aws_lb.existing_lb.arn) > 0 ? 0 : 1
+  name               = "quest-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id]
 }
 
+# Target Group for Load Balancer
 resource "aws_lb_target_group" "quest_tg" {
   name        = "quest-target-group"
   port        = 3000
@@ -201,6 +143,7 @@ resource "aws_lb_target_group" "quest_tg" {
   }
 }
 
+# HTTP Listener
 resource "aws_lb_listener" "http_listener" {
   load_balancer_arn = aws_lb.quest_alb.arn
   port              = 80
@@ -216,21 +159,26 @@ resource "aws_lb_listener" "http_listener" {
 # Security Groups
 # -----------------------------
 resource "aws_security_group" "alb_sg" {
-  name   = "quest-alb-sg"       # Assigns name "quest-alb-sg" to the security group
-  vpc_id = aws_vpc.quest_vpc.id # Associates this security group with the specified VPC
+  name   = "quest-alb-sg"
+  vpc_id = aws_vpc.quest_vpc.id
 
   ingress {
-    from_port   = 80            # Allows incoming traffic on port 80
-    to_port     = 80            # Same as from_port since we only want port 80
-    protocol    = "tcp"         # Uses TCP protocol for HTTP traffic
-    cidr_blocks = ["0.0.0.0/0"] # Allows access from any IP address (0.0.0.0/0 means worldwide access)
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
-
   ingress {
-    from_port   = 443           # Allows incoming traffic on port 443
-    to_port     = 443           # Same as from_port since we only want port 443
-    protocol    = "tcp"         # Uses TCP protocol for HTTPS traffic
-    cidr_blocks = ["0.0.0.0/0"] # Allows access from any IP address (0.0.0.0/0 means worldwide access)
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
@@ -242,39 +190,33 @@ resource "aws_security_group" "ecs_sg" {
     from_port   = 3000
     to_port     = 3000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Open to public access (not ideal for security)
+    cidr_blocks = ["0.0.0.0/0"]
   }
-
   egress {
     from_port   = 0
     to_port     = 0
-    protocol    = "-1"          # Allows all protocols
-    cidr_blocks = ["0.0.0.0/0"] # Open to all destinations
-  }
-
-  egress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
-
 # -----------------------------
-# Application Load Balancer (ALB)
+# IAM Roles & Policies for ECS
 # -----------------------------
-
 resource "aws_iam_role" "ecs_task_execution" {
-  name = "ecsTaskExecutionRole"
+  name = "quest-ecs-task-execution-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
   })
 }
 
@@ -285,46 +227,47 @@ resource "aws_iam_role_policy" "ecs_execution_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage"
-        ]
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken", "ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage", "logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = "*"
       }
     ]
   })
 }
 
-data "aws_iam_policy" "administrator_access" {
-  arn = "arn:aws:iam::aws:policy/AdministratorAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "ecs_admin_access" {
-  role       = length(aws_iam_role.ecs_task_execution) > 0 ? one(aws_iam_role.ecs_task_execution[*].name) : null
-  policy_arn = data.aws_iam_policy.administrator_access.arn
-}
-
+# -----------------------------
+# VPC & Subnets
+# -----------------------------
 resource "aws_vpc" "quest_vpc" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_support   = true
-  enable_dns_hostnames = true
+  cidr_block = "10.0.0.0/16"
 }
 
 data "aws_availability_zones" "available" {}
 
 resource "aws_subnet" "quest_subnet_1" {
-  vpc_id            = aws_vpc.quest_vpc.id
-  cidr_block        = "10.0.0.0/20"
-  availability_zone = data.aws_availability_zones.available.names[0]
+  vpc_id                  = aws_vpc.quest_vpc.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = data.aws_availability_zones.available.names[0]
+  map_public_ip_on_launch = true
+
 }
 
 resource "aws_subnet" "quest_subnet_2" {
-  vpc_id            = aws_vpc.quest_vpc.id
-  cidr_block        = "10.0.16.0/20"
-  availability_zone = data.aws_availability_zones.available.names[1]
+  vpc_id                  = aws_vpc.quest_vpc.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = data.aws_availability_zones.available.names[1]
+  map_public_ip_on_launch = true
+
+}
+
+resource "aws_route_table_association" "quest_assoc_1" {
+  subnet_id      = aws_subnet.quest_subnet_1.id
+  route_table_id = aws_route_table.quest_rt.id
+}
+
+resource "aws_route_table_association" "quest_assoc_2" {
+  subnet_id      = aws_subnet.quest_subnet_2.id
+  route_table_id = aws_route_table.quest_rt.id
 }
 
 resource "aws_internet_gateway" "quest_gw" {
@@ -340,29 +283,23 @@ resource "aws_route_table" "quest_rt" {
   }
 }
 
-resource "aws_vpc_endpoint" "ecr_api" {
-  vpc_id              = aws_vpc.quest_vpc.id
-  service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
-  vpc_endpoint_type   = "Interface"
-  security_group_ids  = [aws_security_group.ecs_sg.id]
-  subnet_ids          = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id]
-  private_dns_enabled = false
-}
-
 # -----------------------------
 # Variables
 # -----------------------------
 variable "aws_region" {
   description = "AWS region for deployment"
   type        = string
-  default     = "us-east-1"
 }
 
 # -----------------------------
 # Outputs
 # -----------------------------
-
 output "alb_dns_name" {
   description = "Load Balancer DNS Name"
   value       = aws_lb.quest_alb.dns_name
+}
+
+output "ecr_repository_url" {
+  description = "ECR repository URL"
+  value       = aws_ecr_repository.quest_container_repo.repository_url
 }

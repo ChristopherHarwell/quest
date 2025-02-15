@@ -4,7 +4,7 @@ FROM node:22 AS base
 # Set environment variables for pnpm
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-
+ENV SECRET_WORD="TwelveFactor"
 # Enable Corepack and install pnpm
 RUN npm install -g corepack@latest && corepack enable
 RUN corepack prepare pnpm@latest --activate
