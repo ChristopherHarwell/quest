@@ -1330,20 +1330,6 @@ resource "aws_lb_listener" "http_redirect" {
     }
   }
 }
-
-# HTTPS Listener (Handles Traffic)
-resource "aws_lb_listener" "https_listener" {
-  load_balancer_arn = aws_lb.quest_alb.arn
-  port              = 443
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = aws_iam_server_certificate.quest_ssl_cert.arn
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.quest_tg.arn
-  }
-}
 ```
 
 ## Final Thoughts on Setting up SSL

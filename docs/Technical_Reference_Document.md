@@ -360,7 +360,7 @@ Overall, this extensive debugging and refactoring process led me to a robust ECS
 - Integrate **CI/CD workflows** to automate **container builds and deployments** only when there are changes to the source code files.
 - Integrate **CI/CD workflows** to automate infrastructure changes when code changes are made to the Terraform file.
 - Implement TLS with Route53
-- Make the Terraform structure more Modular like this []()
+- Make the Terraform structure more Modular like this [Modular Terraform Directory Structure - Example](./assets/Modular_Terraform_Directory_Structure.png)
 
 This TRD serves as a reference for the **design decisions and trade-offs** made in moving from **Lambda to ECS** and will inform future **infrastructure decisions**. 
 
