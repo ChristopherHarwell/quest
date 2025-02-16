@@ -939,3 +939,418 @@ I believe the task execution role is the role that is actually required to start
 Where as the task role itself is what the process inside needs for access to things
 
 ---
+## Notes on SSL Setup
+
+I need to setup SSL, but Route53 doesn't offer a free tier, so I have to go the Self Signed Certificate route. However, since the ALB DNS name is dynamic I need to setup a wildcard certificate.
+
+To generate a self-signed wildcard certificate for an AWS ALB DNS name, I need to follow these steps:
+
+### 1. Retrieve Your ALB DNS Name
+
+First, I need to obtain my ALB’s DNS name. I can do this using Terraform or AWS CLI:
+
+#### **Terraform**
+
+```sh
+terraform output alb_dns_name
+```
+
+#### **AWS CLI**
+```sh
+aws elbv2 describe-load-balancers --query "LoadBalancers[*].DNSName"
+```
+
+#### **Example ALB DNS Name:**
+
+```
+my-alb-1234567890.us-east-1.elb.amazonaws.com
+```
+
+## 2. Generate a Self-Signed Wildcard Certificate
+
+A wildcard certificate covers all subdomains of a given domain (e.g., *.us-east-1.elb.amazonaws.com).
+
+### Step 1: Create a Private Key
+
+```sh
+openssl genrsa -out wildcard_private_key.pem 2048
+```
+
+### Step 2: Create a Certificate Signing Request (CSR)
+
+Replace `<my-alb-region>.elb.amazonaws.com with my ALB’s top-level domain:
+
+```sh
+openssl req -new -key wildcard_private_key.pem -out wildcard_csr.pem -subj "/CN=*.us-east-1.elb.amazonaws.com"
+```
+
+### Step 3: Generate a Self-Signed Wildcard Certificate
+
+```sh
+openssl x509 -req -days 365 -in wildcard_csr.pem -signkey wildcard_private_key.pem -out wildcard_certificate.pem
+```
+
+This creates:
+- wildcard_private_key.pem → Private key
+- wildcard_certificate.pem → Self-signed wildcard certificate (valid for 1 year)
+
+## 3. Upload the Certificate to AWS IAM
+
+AWS Certificate Manager (ACM) does not support self-signed certificates, so I need to upload it to AWS IAM.
+
+```sh
+aws iam upload-server-certificate \
+  --server-certificate-name wildcard-selfsigned-cert \
+  --certificate-body file://wildcard_certificate.pem \
+  --private-key file://wildcard_private_key.pem
+```
+
+Verify the uploaded certificate:
+
+```sh
+aws iam list-server-certificates
+```
+
+## 4. Use the Wildcard Certificate in Terraform
+
+Modify my Terraform configuration to use the IAM wildcard certificate:
+
+```hcl
+resource "aws_iam_server_certificate" "alb_wildcard_cert" {
+  name             = "wildcard-selfsigned-cert"
+  certificate_body = file("wildcard_certificate.pem")
+  private_key      = file("wildcard_private_key.pem")
+}
+
+resource "aws_lb_listener" "https_listener" {
+  load_balancer_arn = aws_lb.quest_alb.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = aws_iam_server_certificate.alb_wildcard_cert.arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.quest_tg.arn
+  }
+}
+```
+
+## 5. Apply Terraform Changes
+
+Run:
+
+```sh
+terraform apply
+```
+
+This will configure TLS on the ALB using a wildcard self-signed certificate.
+
+## Important Notes
+- Wildcard certificates only work for subdomains, e.g., subdomain.us-east-1.elb.amazonaws.com, but not for the root ALB domain itself.
+- Browsers will show security warnings since the certificate is self-signed.
+- For production, use AWS ACM with a trusted CA-issued certificate.
+
+---
+---
+
+### Q: What is the CSR for if we're not uploading this to AWS?
+
+The Certificate Signing Request (CSR) is used when requesting a certificate from a Certificate Authority (CA) (e.g., Let’s Encrypt, AWS ACM, DigiCert). However, when generating a self-signed certificate, we don’t need an external CA, so the CSR is only an intermediate step.
+
+### Q: Why Generate a CSR If We're Not Using It in Terraform?
+
+The CSR is primarily used to create a certificate that conforms to standard practices, even if we’re signing it ourselves. Here’s why it’s still useful:
+1. **Ensures Proper Subject Information**
+- The CSR contains details like the Common Name (CN) (e.g., *.example.com), organization, country, etc.
+- When we generate a certificate directly, we might miss this structured format.
+2. **Follows Standard Certificate Generation Workflow**
+- If we later decide to use a trusted CA, we can reuse the CSR to request a signed certificate from AWS ACM or a commercial provider.
+3. **Allows for Certificate Extensions**
+- Some organizations use CSR extensions for security purposes, which ensures proper configuration when generating self-signed certificates.
+
+### Q: When Do We Actually Use the CSR?
+- If you need a trusted certificate, you would submit the CSR to a Certificate Authority (CA) like:
+- AWS Certificate Manager (ACM)
+- Let’s Encrypt
+- DigiCert, GoDaddy, etc.
+- For self-signed certificates, we just use the CSR to generate the final certificate.pem, but we don’t need the CSR anymore after that.
+
+### Q: What If We Skip the CSR?
+We can generate the self-signed certificate without the CSR by combining it into a single command:
+
+```sh
+openssl req -x509 -nodes -newkey rsa:2048 -keyout wildcard_private_key.pem -out wildcard_certificate.pem -days 365 -subj "/CN=*.yourdomain.com"
+```
+
+This avoids the extra CSR step entirely.
+
+### Conclusion
+- The CSR is an optional step for self-signed certificates.
+- It follows best practices and can be used later if a trusted CA is needed.
+- Terraform doesn’t use it because IAM only needs the final certificate and private key.
+
+---
+
+# Challenges with setting up SSL
+
+## Problem
+After running `terraform apply` with the latest changes, I get this error:
+
+
+```sh
+│ Error: creating ELBv2 Listener (arn:aws:elasticloadbalancing:us-east-1:418272762224:loadbalancer/app/quest-alb/bc57bf3bef32c152): operation error Elastic Load Balancing v2: CreateListener, https response error StatusCode: 400, RequestID: 1e3ab651-b76a-4273-b9d7-6d716da53384, DuplicateListener: A listener already exists on this port for this load balancer 'arn:aws:elasticloadbalancing:us-east-1:418272762224:loadbalancer/app/quest-alb/bc57bf3bef32c152'
+│ 
+│   with aws_lb_listener.http_redirect,
+│   on main.tf line 180, in resource "aws_lb_listener" "http_redirect":
+│  180: resource "aws_lb_listener" "http_redirect" {
+│ 
+```
+
+The error message “DuplicateListener: A listener already exists on this port for this load balancer” occurs because an ALB can only have one listener per port.
+
+In my Terraform code, I likely already have an HTTP (port 80) listener, and when adding the new `http_redirect` resource, Terraform tries to create another listener on port 80, causing the conflict.
+
+## How to Fix This
+
+### 1. Check for an Existing Listener on Port 80
+
+Look for an existing listener in my Terraform configuration:
+
+```hcl
+resource "aws_lb_listener" "http_listener" {
+  load_balancer_arn = aws_lb.quest_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.quest_tg.arn
+  }
+}
+```
+
+If this already exists, it conflicts with the new redirect listener.
+
+### 2. Modify the Existing HTTP Listener to Redirect to HTTPS
+
+Instead of creating a new listener (http_redirect), modify the existing http_listener to redirect traffic to HTTPS:
+
+```hcl
+resource "aws_lb_listener" "http_listener" {
+  load_balancer_arn = aws_lb.quest_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+```
+
+This will ensure:
+- There is only one listener on port 80.
+- All HTTP requests automatically redirect to HTTPS.
+- Terraform will apply changes successfully.
+
+### 3. Apply Changes
+
+Once I have modified the existing listener, I need to apply the Terraform changes:
+
+```sh
+terraform apply
+```
+
+If Terraform still detects the old conflicting listener, I can delete it manually. To do that I need to get the loadbalancer-arn so that I can get the listener arn
+
+```sh
+aws elbv2 describe-load-balancers --query "LoadBalancers[*].[LoadBalancerArn, DNSName]" --output table
+```
+
+This will display a table like this containing the loadbalancer arn and the dns name:
+
+```
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+|                                                                 DescribeLoadBalancers                                                                 |
++--------------------------------------------------------------------------------------------------+----------------------------------------------------+
+|  arn:aws:elasticloadbalancing:us-east-1:418272762224:loadbalancer/app/quest-alb/bc57bf3bef32c152 |  quest-alb-1868208414.us-east-1.elb.amazonaws.com  |
++--------------------------------------------------------------------------------------------------+----------------------------------------------------+
+```
+
+Then I can use the loadbalancer arn to get the listeners like this:
+
+```sh
+aws elbv2 describe-listeners --load-balancer-arn arn:aws:elasticloadbalancing:us-east-1:418272762224:loadbalancer/app/quest-alb/bc57bf3bef32c152 --query "Listeners[*].ListenerArn" --output text
+```
+
+Since I have two listeners, it should display something like this:
+
+```
+arn:aws:elasticloadbalancing:us-east-1:418272762224:listener/app/quest-alb/bc57bf3bef32c152/2820285e43d064a5    arn:aws:elasticloadbalancing:us-east-1:418272762224:listener/app/quest-alb/bc57bf3bef32c152/9148730111aceec3
+```
+
+Then I can use the listener-arn(s) to delete the listener like this:
+
+```sh
+aws elbv2 delete-listener --listener-arn arn:aws:elasticloadbalancing:us-east-1:418272762224:listener/app/quest-alb/bc57bf3bef32c152/2820285e43d064a5 && \
+aws elbv2 delete-listener --listener-arn arn:aws:elasticloadbalancing:us-east-1:418272762224:listener/app/quest-alb/bc57bf3bef32c152/9148730111aceec3
+```
+
+Then re-run:
+
+```sh
+terraform apply
+```
+
+---
+---
+
+After doing the above steps, I am now getting this error again:
+
+```
+╷
+│ Error: creating ELBv2 Listener (arn:aws:elasticloadbalancing:us-east-1:418272762224:loadbalancer/app/quest-alb/bc57bf3bef32c152): operation error Elastic Load Balancing v2: CreateListener, https response error StatusCode: 400, RequestID: fabae3e1-8711-4c59-baf8-5a88229067ed, DuplicateListener: A listener already exists on this port for this load balancer 'arn:aws:elasticloadbalancing:us-east-1:418272762224:loadbalancer/app/quest-alb/bc57bf3bef32c152'
+│ 
+│   with aws_lb_listener.http_redirect,
+│   on main.tf line 180, in resource "aws_lb_listener" "http_redirect":
+│  180: resource "aws_lb_listener" "http_redirect" {
+```
+
+The error “DuplicateListener: A listener already exists on this port for this load balancer” means that a listener on the same port already exists for your AWS ALB. This usually happens when trying to create multiple listeners on the same port 80 (HTTP) or 443 (HTTPS).
+
+## How to Fix This
+
+Follow these steps to identify and remove the duplicate listener:
+
+### 1. Check Existing Listeners for the Load Balancer
+
+Run the following command to list all existing listeners:
+```sh
+aws elbv2 describe-listeners --load-balancer-arn arn:aws:elasticloadbalancing:us-east-1:418272762224:loadbalancer/app/quest-alb/bc57bf3bef32c152 --query "Listeners[*].[ListenerArn,Port,Protocol]" --output table
+```
+
+This will output something like:
+
+```
+---------------------------------------------------------------
+|                        DescribeListeners                    |
++-------------------------------------------------------------+
+| arn:aws:elasticloadbalancing:us-east-1:418272762224:listener/app/quest-alb/bc57bf3bef32c152/abc123 | 80  | HTTP  |
+| arn:aws:elasticloadbalancing:us-east-1:418272762224:listener/app/quest-alb/bc57bf3bef32c152/xyz789 | 443 | HTTPS |
++-------------------------------------------------------------+
+```
+
+If there’s already a port 80 listener, that’s likely the conflict.
+
+### 2. Delete the Conflicting Listener
+
+Now that I have the Listener ARN for the conflicting port, delete it:
+```sh
+aws elbv2 delete-listener --listener-arn arn:aws:elasticloadbalancing:us-east-1:418272762224:listener/app/quest-alb/bc57bf3bef32c152/abc123
+```
+	🚨 Be careful! Ensure you’re deleting the correct listener (port 80 or 443).
+
+### 3. Modify Terraform to Avoid Duplication
+
+Instead of creating a new HTTP listener, modify the existing HTTP listener to redirect traffic to HTTPS (if that’s what Ixxxxxxxxxxxxxxxxxxxxxxxxxdddddddbfbhgjjf    want).
+
+Check Terraform Code for Duplicates
+
+#### Look for two resources with:
+- resource "aws_lb_listener" "http_listener" (Port 80)
+- resource "aws_lb_listener" "http_redirect" (Port 80, Redirect to HTTPS)
+
+If both exist, remove the http_redirect listener and modify the existing http_listener:
+
+```hcl
+resource "aws_lb_listener" "http_listener" {
+  load_balancer_arn = aws_lb.quest_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+```
+
+Why? ALB only allows one listener per port—instead of creating a new redirect listener, we update the existing HTTP listener to perform the redirect.
+
+### 4. Apply Terraform Again
+
+Now, apply the changes:
+
+```sh
+terraform apply
+```
+
+---
+---
+
+I found the issue, and it seems that I hav a duplicate HTTP Listener on Port 80
+
+
+I have two listeners configured for port 80 (HTTP):
+1. aws_lb_listener.http_listener (forwards traffic to target group)
+2. aws_lb_listener.http_redirect (redirects HTTP to HTTPS)
+
+Since an ALB can only have one listener per port, Terraform throws the error.
+
+## *Fix:* Remove the Duplicate HTTP Listener
+
+I should remove the `http_listener` and keep `http_redirect` to ensure that HTTP traffic is redirected to HTTPS.
+
+
+```hcl
+# Redirect HTTP to HTTPS
+resource "aws_lb_listener" "http_redirect" {
+  load_balancer_arn = aws_lb.quest_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+# HTTPS Listener (Handles Traffic)
+resource "aws_lb_listener" "https_listener" {
+  load_balancer_arn = aws_lb.quest_alb.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = aws_iam_server_certificate.quest_ssl_cert.arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.quest_tg.arn
+  }
+}
+```
+
+## Final Thoughts on Setting up SSL
+- You cannot have multiple listeners on the same port.
+- Instead of creating a new redirect listener, modify the existing HTTP listener to handle HTTP → HTTPS redirects.
+- If the issue persists, manually check the existing ALB listeners in AWS Console or CLI.
+- Use aws elbv2 describe-listeners to find duplicate listeners.
+- Use aws elbv2 delete-listener to remove the conflicting one.
+- Modify the existing Terraform http_listener to redirect instead of creating a new one.
+- Run terraform apply to apply the fix.

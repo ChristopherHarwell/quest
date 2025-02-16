@@ -5,5 +5,5 @@
 - **Raw Notes:** My unstructured notes from throughout the process are available in the [Raw Notes](./Raw_Notes.md).
 
 ## Screenshot & URL
-- **Hosted App (No TLS):** [Access the application](http://quest-alb-1868208414.us-east-1.elb.amazonaws.com/)
-- **Screenshot:** ![Screenshot (no TLS)](./assets/Screenshot_No_TLS.png)
+- **Hosted App:** [Access the application](https://quest-alb-1868208414.us-east-1.elb.amazonaws.com/)
+- **Screenshot:** ![Screensho](./assets/Screenshot_TLS.png)
