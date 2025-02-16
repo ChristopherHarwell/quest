@@ -1,0 +1,70 @@
+# Ignore node modules and dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# Ignore build artifacts
+dist
+build
+*.tsbuildinfo
+
+# Ignore environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+
+# Ignore logs and temporary files
+logs
+*.log
+*.out
+*.pid
+*.swp
+
+# Ignore Docker-related files
+.dockerignore
+Dockerfile.dev
+docker-compose.yml
+docker-compose.override.yml
+
+# Ignore Git files
+.git
+.gitignore
+.gitattributes
+.gitmodules
+.gitkeep
+
+# Ignore IDE and editor config files
+.vscode
+.idea
+*.sublime-project
+*.sublime-workspace
+
+# Ignore OS and temporary files
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+*.swp
+*.swo
+
+# Ignore test-related files
+coverage
+jest.config.js
+*.spec.*
+*.test.*
+
+# Ignore miscellaneous files
+*.lock
+*.tar.gz
+*.zip
+
+# Ignore Terraform files
+*.tf
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
