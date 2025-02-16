@@ -107,11 +107,15 @@ Initially, the plan was to deploy the application as an **AWS Lambda function**.
 | **Scaling**           | Automatic scaling, pay-per-execution          | Manual scaling or auto-scaling available   |
 | **Cost Efficiency**   | Cheaper for small workloads                   | Better for long-running processes          |
 
-**Reasons for Choosing ECS Fargate:**
-- **Greater control over networking**: Lambda does not retain a static IP, complicating outbound network filtering.
-- **Long-running processes**: Lambda has a 15-minute execution limit, whereas ECS Fargate containers can run indefinitely.
-- **Easier debugging**: Containers log directly to CloudWatch and can offer shell access for troubleshooting.
-- **More flexibility in application packaging**: Lambda requires ZIP-based deployments, while ECS supports full Docker images.
+#### Reasons for Choosing ECS Fargate:
+- **Greater control over networking**:
+	- Lambda does not retain a static IP, complicating outbound network filtering.
+- **Long-running processes**:
+	- Lambda has a 15-minute execution limit, whereas ECS Fargate containers can run indefinitely.
+- **Easier debugging**:
+	- Containers log directly to CloudWatch and can offer shell access for troubleshooting.
+- **More flexibility in application packaging**:
+	- Lambda requires ZIP-based deployments, while ECS supports full Docker images.
 
 ---
 
@@ -124,18 +128,18 @@ Had AWS Lambda been used, the approach would have been structured as follows:
 ### 3.1 Why This Was the Ideal Approach for AWS Lambda
 
 - **GitHub Actions CI/CD Pipeline**
-  - Automates **Terraform validation, formatting, and deployment**.
-  - Ensures that **Lambda deployments** are uploaded to **S3** and provisioned using **Terraform**.
+	- Automates **Terraform validation, formatting, and deployment**.
+	- Ensures that **Lambda deployments** are uploaded to **S3** and provisioned using **Terraform**.
 - **S3 + DynamoDB for State & Deployment**
-  - **Terraform state** stored in **S3** ensures **version control**.
-  - **Lambda deployment ZIP** stored in **S3** allows **faster updates**.
-  - **DynamoDB ensures state-locking** for concurrent **Terraform runs**.
+	- **Terraform state** stored in **S3** ensures **version control**.
+	- **Lambda deployment ZIP** stored in **S3** allows **faster updates**.
+	- **DynamoDB ensures state-locking** for concurrent **Terraform runs**.
 - **AWS ALB & API Gateway Integration**
-  - The **ALB forwards HTTP traffic** to **Lambda via a Target Group**.
-  - Alternatively, **API Gateway** could be used for finer-grained control.
+	- The **ALB forwards HTTP traffic** to **Lambda via a Target Group**.
+	- Alternatively, **API Gateway** could be used for finer-grained control.
 - **Fully Managed Scaling**
-  - **Lambda auto-scales automatically** based on request volume.
-  - No need for **manual scaling** (as required in ECS).
+	- **Lambda auto-scales automatically** based on request volume.
+	- No need for **manual scaling** (as required in ECS).
 
 ---
 
@@ -157,15 +161,13 @@ Below is my comprehensive documentation detailing the processes, challenges, and
 
 ### 5.1 Initial Attempt: Lambda Function
 
-**Motivation:**  
+#### Motivation:
 I started with the idea of using a Lambda function. This approach seemed appealing for a smaller service, and I was hoping that the cold start delays (around 200ms) would be acceptable.
 
-**Issue Encountered:**  
-While setting up the Lambda, I ran into unexpected problems. I noted:
+#### Issue Encountered: 
+While setting up the Lambda, I ran into unexpected problems. I noted: *“I ran into an issue when creating the Lambda function so that may not be the best approach.”*
 
-    “I ran into an issue when creating the Lambda function so that may not be the best approach.”
-
-**Decision:**  
+#### Decision:
 Because of these complications—and since one of the requirements was to use a Dockerfile—I decided to pivot away from Lambda. Instead, I focused on building a Docker container image that could run in ECS, still allowing an AWS-based deployment.
 
 **Original Lambda-Based Architecture Diagram:**
@@ -207,15 +209,18 @@ graph TD;
 ```
 ### 5.2 Building a Docker Container
 
-Corepack/Pnpm Error and Resolution
+#### Corepack/Pnpm Error and Resolution
 
 I created a multi-stage Dockerfile using Node.js 22-slim. However, when I built the image, I encountered this error:
+
 ```sh
 Error: Cannot find matching keyid: {"signatures":[{"sig":"MEYCIQDqo/55uI8Wf6M4RGn3wszRvnxozJXgQK3vMFN/1emK+AIhAOZdugJH0o6Gv0QdU3iAPB67UBlDtAp6EtXoMiVasB2t","keyid":"SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"}], ...}
 ```
-	•	Root Cause:
-There was a Corepack signature validation issue with pnpm. Corepack’s integrity keys were outdated, which caused the Docker build to fail.
-	•	Initial Dockerfile (snippet):
+
+- **Root Cause:**
+	- There was a Corepack signature validation issue with pnpm. Corepack’s integrity keys were outdated, which caused the Docker build to fail.
+
+- **Initial Dockerfile (snippet):**
 ```Dockerfile
 # Stage 1: Base image
 FROM node:22-slim AS base
@@ -227,9 +232,10 @@ RUN corepack enable
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --prod
 ```
 
-This approach triggered the “Cannot find matching keyid” error.
-	•	Resolution:
-I updated Corepack to the latest version, explicitly installed pnpm, and pinned them in my Dockerfile to bypass the signature validation problem.
+This approach triggered the *“Cannot find matching keyid”* error.
+
+- **Resolution:**
+	- I updated Corepack to the latest version, explicitly installed pnpm, and pinned them in my Dockerfile to bypass the signature validation problem.
 
 #### Final Dockerfile
 
@@ -276,22 +282,22 @@ CMD ["node", "/app/index.js"]
 
 #### Local Docker Build & Run Issues
 
-• Port Conflict:
-I encountered this error:
+- Port Conflict:
+	- I encountered this error:
 ```Dockerfile
 docker: Error response from daemon: driver failed programming external connectivity …
 Bind for 0.0.0.0:3000 failed: port is already allocated.
 ```
 
-*Solution*:
-I resolved this conflict by terminating the process that was already using port 3000.
+- Solution:
+	- I resolved this conflict by terminating the process that was already using port 3000.
 
-• Confusion About Application Type:
-At that point, I wasn’t completely sure whether my application was purely an HTTP server or a function-like service. Ultimately, I decided to keep the container as a server listening on port 3000.
+- **Confusion About Application Type:**
+	- At that point, I wasn’t completely sure whether my application was purely an HTTP server or a function-like service. Ultimately, I decided to keep the container as a server listening on port 3000.
 
-Automation with a Shell Script
+##### Automation with a Shell Script
 
-To avoid typing the same Docker commands repeatedly, I wrote a bash script named setups.sh:
+To avoid typing the same Docker commands repeatedly, I wrote a bash script named [setups.sh](../setup.sh):
 ```sh
 #!/bin/sh
 
@@ -300,7 +306,7 @@ docker run -d -p 3000:3000 quest_lambda_app
 docker ps --format '{{.Names}}' | grep -w "^quest_lambda_app$"
 ```
 
-• Purpose:
+- **Purpose:**
 	1.	Build the Docker image (quest_lambda_app).
 	2.	Run it in detached mode, mapping host port 3000.
 	3.	Verify that the container is running.
@@ -311,76 +317,74 @@ Once my Docker image worked locally, I moved on to deploying it on ECS (Fargate)
 
 #### GitHub Actions & AWS Credentials
 
-• Problem:
-In my GitHub Actions pipeline, I encountered AWS credential errors when attempting to push images to ECR. I noted:
-“I think the issue is that I need to setup OIDC authentication.”
+- **Problem:**
+	- In my GitHub Actions pipeline, I encountered AWS credential errors when attempting to push images to ECR. I noted: *“I think the issue is that I need to setup OIDC authentication.”*
 
-• Resolution:
-I discovered that I had misspelled an environment variable. Once I corrected it, the credential issues were resolved, and I was able to deploy to ECS.
+- **Resolution:**
+	- I discovered that I had misspelled an environment variable. Once I corrected it, the credential issues were resolved, and I was able to deploy to ECS.
 
 #### ECR Registry (Private vs. Public) and ECS Pull Issues
 
-• ResourceInitializationError:
-My ECS tasks were failing with:
+##### ResourceInitializationError:
+- My ECS tasks were failing with:
 ```txt
 ResourceInitializationError: unable to pull secrets or registry auth: The task cannot pull registry auth from Amazon ECR…
 ```
 
-• Possible Causes:
-	1.	Network: My ECS tasks might have been in private subnets without a NAT Gateway.
-	2.	Security Group: Outbound internet traffic might have been blocked.
-	3.	IAM Role: The ECS Task Execution Role might have been missing the AmazonECSTaskExecutionRolePolicy.
+###### Possible Causes:
+1.	**Network:** My ECS tasks might have been in private subnets without a NAT Gateway.
+2.	**Security Group:** Outbound internet traffic might have been blocked.
+3.	**IAM Role:** The ECS Task Execution Role might have been missing the AmazonECSTaskExecutionRolePolicy.
 
-• Public vs. Private ECR:
-After facing persistent time constraints and misconfiguration issues with the private registry, I considered switching to a public ECR registry. However, I ultimately resolved the authentication challenges with the private registry, enabling ECS tasks to pull images reliably.
+##### Public vs. Private ECR:
+- After facing persistent time constraints and misconfiguration issues with the private registry, I considered switching to a public ECR registry. However, I ultimately resolved the authentication challenges with the private registry, enabling ECS tasks to pull images reliably.
 
 #### Networking & Subnet Challenges
+##### Changing CIDR Blocks:
+- I attempted to change my subnets from a `/24` to a larger` /20` CIDR. However, Terraform refused to delete subnets that were still associated with an Elastic Load Balancer (ELB).
 
-• Changing CIDR Blocks:
-I attempted to change my subnets from a /24 to a larger /20 CIDR. However, Terraform refused to delete subnets that were still associated with an Elastic Load Balancer (ELB).
+ ##### Error:
+- DependencyViolation: The subnet ‘subnet-0fe84a78b72b33891’ has dependencies and cannot be deleted.
 
-• Error:
-DependencyViolation: The subnet ‘subnet-0fe84a78b72b33891’ has dependencies and cannot be deleted.
+##### Diagnosis:
+- I found that the subnet was still tied to an ELB. I had to manually deregister the ELB and delete it before I could remove the subnet.
 
-• Diagnosis:
-I found that the subnet was still tied to an ELB. I had to manually deregister the ELB and delete it before I could remove the subnet.
+##### ALB & Target Group:
+- Even after cleaning up, my ECS tasks were not registering in the target group. Running `aws elbv2 describe-target-health` returned an empty list, indicating that no tasks were registered because they had either stopped or failed to launch.
 
-• ALB & Target Group:
-Even after cleaning up, my ECS tasks were not registering in the target group. Running aws elbv2 describe-target-health returned an empty list, indicating that no tasks were registered because they had either stopped or failed to launch.
-
-#### CI/CD Pipeline Refinements
-	1.	Lifecycle & Data Sources in Terraform:
-• I added lifecycle blocks to prevent Terraform from accidentally destroying existing resources.
-• I used data sources to detect if resources already existed so that Terraform wouldn’t recreate them unnecessarily.
-	2.	Selective Terraform Execution:
-• I modified my GitHub Actions pipeline to run terraform apply only when there were changes to my .tf files. This prevented unnecessary redeployments on every code push.
+#### CI/CD Pipeline Refinements [^1]
+1.	**Lifecycle & Data Sources in Terraform:**
+	- I added lifecycle blocks to prevent Terraform from accidentally destroying existing resources.
+	- I used data sources to detect if resources already existed so that Terraform wouldn’t recreate them unnecessarily.
+2.	**Selective Terraform Execution:**
+	- I modified my GitHub Actions pipeline to run terraform apply only when there were changes to my .tf files. This prevented unnecessary redeployments on every code push.
 
 #### IAM Roles: Task Execution Role vs. Task Role
 
 After some investigation—and with help from the AltF4 Discord server—I clarified that two IAM roles are essential for ECS:
-	1.	Task Execution Role (Required):
-• Grants ECS permission to pull the container image from ECR, write logs to CloudWatch, etc.
-• Must include the AmazonECSTaskExecutionRolePolicy.
-	2.	Task Role (Optional):
-• Used if the running container needs additional permissions (e.g., accessing DynamoDB, S3, etc.).
+1.	**Task Execution Role (Required):**
+- Grants ECS permission to pull the container image from ECR, write logs to CloudWatch, etc.
+- Must include the AmazonECSTaskExecutionRolePolicy.
+2.	**Task Role (Optional):**
+- Used if the running container needs additional permissions (e.g., accessing DynamoDB, S3, etc.).
 
 I realized that my issue wasn’t with the task role at all; I had mistakenly assigned a `task_role_arn` when what I really needed was to set the `execution_role_arn`. I corrected this by assigning the ECS execution role—with the necessary permissions—so that ECS could pull images from ECR, write logs, and launch tasks properly.
 
 My original Terraform configuration was missing several critical settings:
-• Missing IAM permissions: I attached the AWS-managed IAM policy AmazonECSTaskExecutionRolePolicy to my ECS execution role.
-• Incorrect network configurations: I explicitly set `map_public_ip_on_launch = true` for my subnets and added proper route table associations for internet access.
-• Incomplete ECR repository policies: I updated the policy to explicitly grant the ECS execution role permission to pull images.
-• I also added an output variable for the ECR repository URL for easier verification of image availability.
+- **Missing IAM permissions:** I attached the AWS-managed IAM policy `AmazonECSTaskExecutionRolePolicy` to my ECS execution role.
+- **Incorrect network configurations:** I explicitly set `map_public_ip_on_launch = true` for my subnets and added proper route table associations for internet access.
+- **Incomplete ECR repository policies:** I updated the policy to explicitly grant the ECS execution role permission to pull images.
+- I also added an output variable for the ECR repository URL for easier verification of image availability.
 
 ## 5.4 Final Terraform Solution & Architecture Diagram
 
 ### Final Terraform Fixes
 
-• I removed the `task_role_arn` from my ECS task definition and instead set the `execution_role_arn` to point to my ECS execution role.
-• I attached the `AmazonECSTaskExecutionRolePolicy` to the ECS execution role to grant the necessary permissions (pulling images from ECR, writing logs to CloudWatch, etc.).
-• I explicitly set my subnets to have `map_public_ip_on_launch = true` and ensured that route table associations provided proper internet access.
-• I updated my ECR repository policy to explicitly allow the ECS execution role to pull images.
-• I added an output variable for the ECR repository URL for easier verification of image availability.
+- I removed the `task_role_arn` from my ECS task definition and instead set the `execution_role_arn` to point to my ECS execution role.
+- I attached the `AmazonECSTaskExecutionRolePolicy` to the ECS execution role to grant the necessary permissions (pulling images from ECR, writing logs to CloudWatch, etc.).
+- I explicitly set my subnets to have `map_public_ip_on_launch = true` and ensured that route table associations provided proper internet access.
+- I updated my ECR repository policy to explicitly allow the ECS execution role to pull images.
+- I added an output variable for the ECR repository URL for easier verification of image availability.
 
 ## Architecture Diagrams
 
@@ -388,199 +392,17 @@ My original Terraform configuration was missing several critical settings:
 
 [![](https://mermaid.ink/img/pako:eNqVVNtu4jAQ_RXLUveJVhAChay0EpdthURXiKCt1FBVxhnAKrGzvrRlS_99Jwm3UPqwlqJ4Zo7neux3ylUMNKALzdIlmfS_TyXBZdys0HTuw6eBnGtmrHbcOg0FoAT6BfZV6eeDJVu_R70Iv0dyeflj01PSMiHNhoRuJsGaaORmK8HJNzLS4oVZ2Bkey1622swJCYE7Lez6ViuXmmgnkkI-OggyPghn8u2pJHUWypGGLJnFLCp-5MZJboWSefpk0LkbqxVEP98wZqbONCRT_UfU0CrNFidRw_pTaLH8KKyTruPPYMklmYDWbK50QnJbkUN_LVmi-t0o15Gh4s9CLhC9Mzx-8rwt6dj1tryHwajwWsgnRZxJHustu9-2JJ_urWYSZ5SCToQx2B5DrNp88n16rMM5GANIit5KufieWb6MDlsscfFpqmdSGyoWP3XZikkOuhytM-xGnTRForF8ahmU7KAFM8cKmWDIBBs-F3xDJkwvwOaUiop9wa-T7h7Bcjc3Sr8yHRsyhj8OjDWb8609KeTigtyp2GFDYkhRD5ILMIVtz4LowIcB216okVYvIm_1pnz9DthTWIn1X8NKNP0atifE15DSYGiFJsgPJmJ8bd6zo1Nql5DAlAa4jWHO3MpO6VR-IJQ5q8K15DTAZwcqFPu8WNJgzlYGJZfGeAX6giEBkr02ZfJBqWR3BEUavNM3GrTaV16r6TXbTd9vtBu1RoWuaeBXvatm0_N9z2u12p5fb3xU6N_cQfWqeV2rtq8btetqrd7w260KhVhgY-6K1zJ_ND_-AUbNo9s?type=png)](https://mermaid.live/edit#pako:eNqVVNtu4jAQ_RXLUveJVhAChay0EpdthURXiKCt1FBVxhnAKrGzvrRlS_99Jwm3UPqwlqJ4Zo7neux3ylUMNKALzdIlmfS_TyXBZdys0HTuw6eBnGtmrHbcOg0FoAT6BfZV6eeDJVu_R70Iv0dyeflj01PSMiHNhoRuJsGaaORmK8HJNzLS4oVZ2Bkey1622swJCYE7Lez6ViuXmmgnkkI-OggyPghn8u2pJHUWypGGLJnFLCp-5MZJboWSefpk0LkbqxVEP98wZqbONCRT_UfU0CrNFidRw_pTaLH8KKyTruPPYMklmYDWbK50QnJbkUN_LVmi-t0o15Gh4s9CLhC9Mzx-8rwt6dj1tryHwajwWsgnRZxJHustu9-2JJ_urWYSZ5SCToQx2B5DrNp88n16rMM5GANIit5KufieWb6MDlsscfFpqmdSGyoWP3XZikkOuhytM-xGnTRForF8ahmU7KAFM8cKmWDIBBs-F3xDJkwvwOaUiop9wa-T7h7Bcjc3Sr8yHRsyhj8OjDWb8609KeTigtyp2GFDYkhRD5ILMIVtz4LowIcB216okVYvIm_1pnz9DthTWIn1X8NKNP0atifE15DSYGiFJsgPJmJ8bd6zo1Nql5DAlAa4jWHO3MpO6VR-IJQ5q8K15DTAZwcqFPu8WNJgzlYGJZfGeAX6giEBkr02ZfJBqWR3BEUavNM3GrTaV16r6TXbTd9vtBu1RoWuaeBXvatm0_N9z2u12p5fb3xU6N_cQfWqeV2rtq8btetqrd7w260KhVhgY-6K1zJ_ND_-AUbNo9s)
 
-#### Original Lambda-Based Architecture (mermaidjs code)
-```mermaid
-graph TD;
-    subgraph AWS_Infrastructure
-        subgraph Network
-            VPC[VPC] -->|Contains| Subnets[Public & Private Subnets]
-            Subnets --> SecurityGroups[Security Groups]
-        end
-        
-        subgraph Compute
-            Lambda[Lambda Function] --> IAMRole[Execution IAM Role]
-        end
-        
-        subgraph Storage
-            S3_State[S3 Bucket - Terraform State] --> DynamoDB[State Locking - DynamoDB]
-            S3_Lambda[S3 Bucket - Lambda ZIP] --> Lambda
-        end
-
-        subgraph IAM
-            IAMRole -->|Grants permissions to| Lambda
-            IAMRole -->|Accesses| CloudWatch[CloudWatch Logs]
-        end
-
-        subgraph Load_Balancer
-            ALB[Application Load Balancer] -->|Routes Traffic| TargetGroup[Target Group]
-            TargetGroup -->|Forwards Requests| Lambda
-        end
-    end
-
-    %% Module dependencies
-    Terraform[Terraform IaC] -->|Provisions| Network
-    Terraform -->|Provisions| Compute
-    Terraform -->|Provisions| Storage
-    Terraform -->|Provisions| IAM
-    Terraform -->|Provisions| Load_Balancer
-```
 
 ### Extended Lambda-Based Architecture with CI/CD (If I Had More Time)
 
 [![](https://mermaid.ink/img/pako:eNqVVW1v2jAQ_iuWpe0TrcprgUmTKKwdEp1Q07VSA0ImMWA1sTO_tGWl_31nh0AS0g-LhLAf3z32nZ87v-NAhBT38VqSZIPuR99mHMGnzDJFBo_eYsxXkigtTaCNpKlBwegX1a9CPh9X7PcwHfrwm6Ozs--7oeCaMK52yDNLTrXyp2YZsQB9RVPJXoim2cK8yLJHLQnyaGAk09sbKUyi_GyK0nnOkfLwOKk471DEidG0uNOExMuQ-OkfujY80Exwd3w0HtzeiYj6P95gTwtbBFnoP3b1tJBkXdrVay48DeH7XhNdmeCZanSG7qmUZCVkjNxaeobRlpNYjK58h6GJCJ4ZX4N1tjA_Yd6HlKfeh_c0nqas6bwURMXhId4i_T4l7nZvJOFwRwmVMVMK0qOQFrsT7rLbIAioUhREMYyECR-JDjb-cQghrk9uteJoE0HCxRWJCA-oLO42mFz5gyQBoRF3a9YUZaapMu8EKEGhe0j4igU7dE_kmmonKT8dp_oqZTdn5miuhXwlMlTojv4xVGm1q05tKZBDEDdM_zTLxcCJTh2dpkZt_BF9oZGA9LopnHYIRZve33C8GI4Wj1B9q0i8-ikN2tOgDM8dvujgOJ5YslcKjDKFuC2Obgcb5_E7iSCTXtNPB1ZOcOMguXlVBWTWzvWg7TFn2r8zPKd2C-UYCqZF5wcSsdCWTZEgg6tIsrUi0YTx8iksVEVg8aLzFIRUcrZQlbPFi85Wl9uSt8Mqc1h0y5UuiAPSu4Ue_Jpd3QOVtgjnJ2r78gXditBA-YU0AZzygNG92A4b-Ln7IPv2PZXihbnC3hWb_dG2bFbosZ-bFZri52aH9vO5SakNpOYVas8FKtl6DUV1QOa4hmNoYoSF8CS-W4oZ1hsa0xnuwzCkK2IiPcMz_gGmxGjhbXmA-_A20hqGZrDe4P6KRApmJrFqGzECBR4f0ITwJyHizAWmuP-O33C_2ztvdDuNTq_TarV77Xq7hre437ponHc6jVar0eh2e41Ws_1Rw38dwcV557J-0bts1y8v6s12q9etYRoyyOdt-qS7l_3jH53CgmI?type=png)](https://mermaid.live/edit#pako:eNqVVW1v2jAQ_iuWpe0TrcprgUmTKKwdEp1Q07VSA0ImMWA1sTO_tGWl_31nh0AS0g-LhLAf3z32nZ87v-NAhBT38VqSZIPuR99mHMGnzDJFBo_eYsxXkigtTaCNpKlBwegX1a9CPh9X7PcwHfrwm6Ozs--7oeCaMK52yDNLTrXyp2YZsQB9RVPJXoim2cK8yLJHLQnyaGAk09sbKUyi_GyK0nnOkfLwOKk471DEidG0uNOExMuQ-OkfujY80Exwd3w0HtzeiYj6P95gTwtbBFnoP3b1tJBkXdrVay48DeH7XhNdmeCZanSG7qmUZCVkjNxaeobRlpNYjK58h6GJCJ4ZX4N1tjA_Yd6HlKfeh_c0nqas6bwURMXhId4i_T4l7nZvJOFwRwmVMVMK0qOQFrsT7rLbIAioUhREMYyECR-JDjb-cQghrk9uteJoE0HCxRWJCA-oLO42mFz5gyQBoRF3a9YUZaapMu8EKEGhe0j4igU7dE_kmmonKT8dp_oqZTdn5miuhXwlMlTojv4xVGm1q05tKZBDEDdM_zTLxcCJTh2dpkZt_BF9oZGA9LopnHYIRZve33C8GI4Wj1B9q0i8-ikN2tOgDM8dvujgOJ5YslcKjDKFuC2Obgcb5_E7iSCTXtNPB1ZOcOMguXlVBWTWzvWg7TFn2r8zPKd2C-UYCqZF5wcSsdCWTZEgg6tIsrUi0YTx8iksVEVg8aLzFIRUcrZQlbPFi85Wl9uSt8Mqc1h0y5UuiAPSu4Ue_Jpd3QOVtgjnJ2r78gXditBA-YU0AZzygNG92A4b-Ln7IPv2PZXihbnC3hWb_dG2bFbosZ-bFZri52aH9vO5SakNpOYVas8FKtl6DUV1QOa4hmNoYoSF8CS-W4oZ1hsa0xnuwzCkK2IiPcMz_gGmxGjhbXmA-_A20hqGZrDe4P6KRApmJrFqGzECBR4f0ITwJyHizAWmuP-O33C_2ztvdDuNTq_TarV77Xq7hre437ponHc6jVar0eh2e41Ws_1Rw38dwcV557J-0bts1y8v6s12q9etYRoyyOdt-qS7l_3jH53CgmI)
 
-#### Extended Lambda-Based Architecture with CI/CD (Mermaidjs code)
-
-```mermaid
-graph TD;
-    subgraph AWS_Infrastructure
-        subgraph Network
-            VPC[VPC] -->|Contains| Subnets[Public & Private Subnets]
-            Subnets --> SecurityGroups[Security Groups]
-        end
-        
-        subgraph Compute
-            Lambda[Lambda Function] --> IAMRole[Execution IAM Role]
-        end
-        
-        subgraph Storage
-            S3_State[S3 Bucket - Terraform State] --> DynamoDB[State Locking - DynamoDB]
-            S3_Lambda[S3 Bucket - Lambda ZIP] --> Lambda
-        end
-
-        subgraph IAM
-            IAMRole -->|Grants permissions to| Lambda
-            IAMRole -->|Accesses| CloudWatch[CloudWatch Logs]
-        end
-
-        subgraph Load_Balancer
-            ALB[Application Load Balancer] -->|Routes Traffic| TargetGroup[Target Group]
-            TargetGroup -->|Forwards Requests| Lambda
-        end
-    end
-
-    subgraph GitHub_Actions
-        Push[Developer Pushes Code] --> CI_CD_Workflow[GitHub Actions Workflow]
-        CI_CD_Workflow --> ZipLambda[Zip Lambda Code]
-        ZipLambda --> UploadS3[Upload ZIP to S3]
-        
-        UploadS3 --> TerraformInit[Run Terraform Init]
-        TerraformInit --> TerraformValidate[Run Terraform Validate]
-        TerraformValidate --> TerraformLint[Run Terraform Lint]
-        TerraformLint --> TerraformPlan[Run Terraform Plan]
-        TerraformPlan --> TerraformApply[Run Terraform Apply]
-        
-        TerraformApply --> Lambda[Deploy New Lambda Version]
-    end
-
-    %% Module dependencies
-    Terraform[Terraform IaC] -->|Provisions| Network
-    Terraform -->|Provisions| Compute
-    Terraform -->|Provisions| Storage
-    Terraform -->|Provisions| IAM
-    Terraform -->|Provisions| Load_Balancer
-
-    CI_CD_Workflow --> Terraform[Trigger Terraform]
-```
 
 ### Final ECS-Based Architecture
 
 [![](https://mermaid.ink/img/pako:eNqVVwtv2zYQ_iuEihYdICe2_EisDkX9imMgHQLbW4DZhUBLtExEFjWJSuomBfZb9tP2S3ZHvWV7RRFAIXl3H-_N84tmC4dpprb1xLO9o6Eky_HaX_uEvH1LRrPL0ZiMhC8p91mIp1G8cUMa7IBmAW015fI23pCBLbnwI3LPA-YBbyH0BaVKctNbK2OuCz-I8BH1SEUIGazu4wiuEvs9l0QKsqeRZCHZhNS3dznbcLUMuesC4QhhtFprox2zH0UsyZwFIuJShIf12n9Pk1sv7ZT86anzy1rLJccoKfwtd-OQkcHDgoxC5jBfcupFSv45auQYGWMDT-2C8dOTUQadAOidcAn30ZrBnn4TPpmM5nU8qigNZocNT7jc__TUKsPcAMww5p5D3hHlobGwH8H82Z66DLD-_fsf4iRHG8XWkOTXkLk8kuHh4-VfMYtkw84i1Ahzv5gelUAjF1WQAO8AhVHTQospaPF74IAEEBZkwcInbuP178csskO-YTr5LBy-PejgerwcoJY0eiRjtuU-R1PLVg1Io_GRDNV3pL5j9Z2o7436ThNm5ju4UP_SXMUIpSpEZ1IWWKycQlanJb4kiArzNyafIaO474Kj_7gf1VIZTqwSywr2wFec5JYBAXwFX5Mo31tPgY1-Gs3Gc5O0mhfq77LVK7tjNn0AoZkPXvOZJFPw8zM9ZAjuc4l1vgTOOeQwA_9uPJYxhbLEtIg3gNMCzmSVMUVqZ7VqCrVAIaNSEYmYcQ7AqAEYRwDoHwwiWFYyUh3Nl4Ut6iDV9uSpUUqCPFYLZschlwdCfYfMBp9rscrIFpDIKmd-h6y5gsfc01DEQVQSSA5yCcjau6G1wFKABamymYR6Gyty0TEz3w1ZFJnkuql3Ou2yWwiWT4KR1FEVg9lRHaPdbDbLCGk5VEwAu6y58CC1V2iyWtaunHxltuLBPEt5kvskVKnFgBxjkeLd9yzc8yjC7mRiH9AJ9LFIR5yTmlSDMwgCj9sUwfKSqwWoxGLlVbk6JXgcLtDHgrBbqBJZwQ7iOvJE7DxQWXon0Oq58vK89BZkaZz3Qwv7YSU-iIvPQQ6JJ1l8EmnlMejV0Q_Cgn4feTH2wiS5UF94W5Ij0Du1shaqlJ6mSLrL7oaIHadTApPnlNrlFVu06hsautBZjvMRG3UqjcuynarQM2-lhOI50cm9COVxklYMSRp7oedJ5XMmVOBYO0XG0Jwh4Wt1jlJK_v-LFhZ3GqVyJt4J6pAh9WAKyQectBdgIzjHmfkQukLFL0ss_SUEAtt8JalU2Rfu1Mkto56EiQhnlqpzsf2gbctpvTepY1ieMLTu7EL4VBgW01O1XXoBIQd8lg5z21DsVcdPnodIDTxn20Da7vGq1wLwtVA77fw_YjhGOEqyc0gVxvp0ccf9x3QcRjseFnheGmURbMwCTxxIMhI5yTD2WsrfFGohDx46aytCInzW8NgT84jDWEB8CDpI5qWknGN7NIpgYiLuLr0NERjZcs8z3wwm495NS4fBTjwy80273U7XjWfuyJ1pBF8_VFBg9CisriANJ8NR7yeQovShmtF9GeemP7nq3_wEDg2CLBkqON3h1fCHluVI5WhUPVXcVp_Yjn1R4q1MDHVbS3wnH666TR80XdvDE0q5Az-2XlB6rckd27O1ZsLSYVsaezCurf3vwEpjKRYH39ZMGcZM16ApuDvN3MIvCtjFKsPGnEKT2uenAfX_FGKficBWM1-0r5p53b8wrntGr9_rdLr9bqurawfN7DSNi17P6HQM4_q6b3Ta3e-69k0BNC96V61m_6prdFvGVeu62dY15uBj-Tn5sah-M37_DwN4lF8?type=png)](https://mermaid.live/edit#pako:eNqVVwtv2zYQ_iuEihYdICe2_EisDkX9imMgHQLbW4DZhUBLtExEFjWJSuomBfZb9tP2S3ZHvWV7RRFAIXl3H-_N84tmC4dpprb1xLO9o6Eky_HaX_uEvH1LRrPL0ZiMhC8p91mIp1G8cUMa7IBmAW015fI23pCBLbnwI3LPA-YBbyH0BaVKctNbK2OuCz-I8BH1SEUIGazu4wiuEvs9l0QKsqeRZCHZhNS3dznbcLUMuesC4QhhtFprox2zH0UsyZwFIuJShIf12n9Pk1sv7ZT86anzy1rLJccoKfwtd-OQkcHDgoxC5jBfcupFSv45auQYGWMDT-2C8dOTUQadAOidcAn30ZrBnn4TPpmM5nU8qigNZocNT7jc__TUKsPcAMww5p5D3hHlobGwH8H82Z66DLD-_fsf4iRHG8XWkOTXkLk8kuHh4-VfMYtkw84i1Ahzv5gelUAjF1WQAO8AhVHTQospaPF74IAEEBZkwcInbuP178csskO-YTr5LBy-PejgerwcoJY0eiRjtuU-R1PLVg1Io_GRDNV3pL5j9Z2o7436ThNm5ju4UP_SXMUIpSpEZ1IWWKycQlanJb4kiArzNyafIaO474Kj_7gf1VIZTqwSywr2wFec5JYBAXwFX5Mo31tPgY1-Gs3Gc5O0mhfq77LVK7tjNn0AoZkPXvOZJFPw8zM9ZAjuc4l1vgTOOeQwA_9uPJYxhbLEtIg3gNMCzmSVMUVqZ7VqCrVAIaNSEYmYcQ7AqAEYRwDoHwwiWFYyUh3Nl4Ut6iDV9uSpUUqCPFYLZschlwdCfYfMBp9rscrIFpDIKmd-h6y5gsfc01DEQVQSSA5yCcjau6G1wFKABamymYR6Gyty0TEz3w1ZFJnkuql3Ou2yWwiWT4KR1FEVg9lRHaPdbDbLCGk5VEwAu6y58CC1V2iyWtaunHxltuLBPEt5kvskVKnFgBxjkeLd9yzc8yjC7mRiH9AJ9LFIR5yTmlSDMwgCj9sUwfKSqwWoxGLlVbk6JXgcLtDHgrBbqBJZwQ7iOvJE7DxQWXon0Oq58vK89BZkaZz3Qwv7YSU-iIvPQQ6JJ1l8EmnlMejV0Q_Cgn4feTH2wiS5UF94W5Ij0Du1shaqlJ6mSLrL7oaIHadTApPnlNrlFVu06hsautBZjvMRG3UqjcuynarQM2-lhOI50cm9COVxklYMSRp7oedJ5XMmVOBYO0XG0Jwh4Wt1jlJK_v-LFhZ3GqVyJt4J6pAh9WAKyQectBdgIzjHmfkQukLFL0ss_SUEAtt8JalU2Rfu1Mkto56EiQhnlqpzsf2gbctpvTepY1ieMLTu7EL4VBgW01O1XXoBIQd8lg5z21DsVcdPnodIDTxn20Da7vGq1wLwtVA77fw_YjhGOEqyc0gVxvp0ccf9x3QcRjseFnheGmURbMwCTxxIMhI5yTD2WsrfFGohDx46aytCInzW8NgT84jDWEB8CDpI5qWknGN7NIpgYiLuLr0NERjZcs8z3wwm495NS4fBTjwy80273U7XjWfuyJ1pBF8_VFBg9CisriANJ8NR7yeQovShmtF9GeemP7nq3_wEDg2CLBkqON3h1fCHluVI5WhUPVXcVp_Yjn1R4q1MDHVbS3wnH666TR80XdvDE0q5Az-2XlB6rckd27O1ZsLSYVsaezCurf3vwEpjKRYH39ZMGcZM16ApuDvN3MIvCtjFKsPGnEKT2uenAfX_FGKficBWM1-0r5p53b8wrntGr9_rdLr9bqurawfN7DSNi17P6HQM4_q6b3Ta3e-69k0BNC96V61m_6prdFvGVeu62dY15uBj-Tn5sah-M37_DwN4lF8)
 
-#### Final ECS-Based Architecture (Mermaidjs code)
-```mermaid
-flowchart TD
-
-  %% CI/CD Container
-  subgraph CI_CD [GitHub Actions Pipeline Container]
-    subgraph GH_Actions [GitHub Actions Workflow]
-      A[Push Commit to master branch]
-      B[Trigger Workflow]
-      C["Checkout Repository\n(actions/checkout@v4)"]
-      D["Configure AWS Credentials\n(aws-actions/configure-aws-credentials@v2)"]
-      E["Log in to Amazon ECR\n(aws-actions/amazon-ecr-login@v1)"]
-      F["Build & Push Docker Image\n• docker build -t <registry>/quest-container-repository:latest .\n• docker push to ECR"]
-      G["Update ECS Service\n(Describe, Modify, Register Task Definition)"]
-      A --> B --> C --> D --> E --> F --> G
-    end
-  end
-
-  %% AWS Services Container
-  subgraph AWS_Container [AWS Services Container]
-
-    %% Networking & VPC
-    subgraph VPC_Networking [VPC & Networking]
-      VPC["VPC: quest_vpc\n(CIDR: 10.0.0.0/16)"]
-      IGW["Internet Gateway: quest_gw"]
-      RT["Route Table: quest_rt"]
-      Subnet1["Subnet: quest_subnet_1\n(CIDR: 10.0.1.0/24)"]
-      Subnet2["Subnet: quest_subnet_2\n(CIDR: 10.0.2.0/24)"]
-      VPC --> IGW
-      IGW --> RT
-      RT --> Subnet1
-      RT --> Subnet2
-    end
-
-    %% Security and IAM
-    subgraph Security_IAM [Security & IAM]
-      subgraph Security_Groups [Security Groups]
-        ALB_SG["ALB Security Group: alb_sg\n(Ingress: 80,443)"]
-        ECS_SG["ECS Security Group: ecs_sg\n(Ingress: 3000)"]
-      end
-      subgraph IAM_Roles [IAM Roles]
-        ECS_Exec_Role["IAM Role: ecs_task_execution\n(Permissions: ECR, Logs, ECS)"]
-      end
-    end
-
-    %% Application Services
-    subgraph Application_Services [Application Services]
-      subgraph ECR_and_Logs [ECR & CloudWatch]
-        ECR["ECR Repository: quest_container_repo"]
-        Logs["CloudWatch Log Group: quest_task_logs"]
-      end
-      subgraph ECS_Cluster_Group [ECS Cluster & Service]
-        ECS_Cluster["ECS Cluster: quest_ecs"]
-        ECS_Service["ECS Service: quest_service\n(Fargate)"]
-        ECS_Task["ECS Task: quest_task\n(Container: quest-container, Port: 3000)"]
-        ECS_Cluster --> ECS_Service
-        ECS_Service --> ECS_Task
-        ECS_Task --> Logs
-        ECS_Task --> ECR
-        ECS_Task --> ECS_Exec_Role
-      end
-      subgraph ALB_Group [Application Load Balancer]
-        ALB["Application Load Balancer: quest_alb"]
-        TG["Target Group: quest_tg\n(Port: 3000, Health Check)"]
-        ALB --> TG
-        ALB_SG --> ALB
-      end
-      ECS_Service --> TG
-      ECS_Service --> ECS_SG
-    end
-
-    %% Networking connections from VPC subnets to Application Services
-    Subnet1 -->|Networking| ALB
-    Subnet2 -->|Networking| ALB
-    Subnet1 -->|Networking| ECS_Service
-    Subnet2 -->|Networking| ECS_Service
-
-  end
-
-  %% Link CI/CD to AWS
-  GH_Actions -->|Deploy Updated Image| ECS_Task
-
-  %% Styling for one-level deep nested containers
-  classDef ghActionsStyle fill:#AED6F1,stroke:#333,stroke-width:2px;
-  classDef vpcNetworkingStyle fill:#ABEBC6,stroke:#333,stroke-width:2px;
-  classDef securityIamStyle fill:#F9E79F,stroke:#333,stroke-width:2px;
-  classDef appServicesStyle fill:#F5B7B1,stroke:#333,stroke-width:2px;
-
-  class GH_Actions ghActionsStyle;
-  class VPC_Networking vpcNetworkingStyle;
-  class Security_IAM securityIamStyle;
-  class Application_Services appServicesStyle;
-```
-6. Final Observations & Conclusion:
+1. Final Observations & Conclusion:
 	1.	**Corepack & pnpm:**
         - By pinning Corepack and pnpm to their latest versions in my Dockerfile, I overcame the signature validation errors during the Docker build.
 	2.	**Local Docker Conflicts:**
@@ -613,11 +435,15 @@ Overall, this extensive debugging and refactoring process led me to a robust ECS
 ## 6. Next Steps
 - Evaluate **ECS Auto Scaling** for **cost optimization**.
 - Implement **Terraform state locking** with **DynamoDB**.
-- Integrate **CI/CD workflows** to automate **container builds and deployments**.
+- Consider storing **Terraform state** in **S3**
+- Integrate **CI/CD workflows** to automate **container builds and deployments** only when there are changes to the source code files.
+- Integrate **CI/CD workflows** to automate infrastructure changes when code changes are made to the Terraform file.
+- Implement TLS with Route53
+- Make the Terraform structure more Modular like this []()
 
 This TRD serves as a reference for the **design decisions and trade-offs** made in moving from **Lambda to ECS** and will inform future **infrastructure decisions**. 
 
-7. References
+1. References
 	1. [AWS ECS: Amazon ECS Documentation](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/Welcome.html)
 	2. [AWS ECR: Amazon ECR Documentation](https://docs.aws.amazon.com/AmazonECR/latest/userguide/what-is-ecr.html)
 	3. [AWS Lambda: Lambda Documentation](https://docs.aws.amazon.com/lambda/latest/dg/welcome.html)
@@ -627,3 +453,4 @@ This TRD serves as a reference for the **design decisions and trade-offs** made 
 	    • [pnpm Installation Docs](https://pnpm.io/installation)
     
 
+[^1]: I implemented this change and then reverted it after running into issues running terraform locally

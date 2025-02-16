@@ -124,7 +124,7 @@ To resolve this issue, you can update Corepack to the latest version and install
 
 **Updated Dockerfile:**
 
-``
+```Dockerfile
 # Use Node.js 22 as the base image
 FROM node:22 AS base
 
@@ -155,7 +155,7 @@ EXPOSE 3000
 
 # Run the app
 CMD ["node", "index.js"]
-``
+```
 
 **Explanation:**
 
@@ -220,7 +220,6 @@ For more details on this issue and potential solutions, you can refer to discuss
   
 
 These resources provide additional context and alternative solutions that might be helpful.
-```
 
 I eventually resolved the issue and settled on this Dockerfile:
 
@@ -290,7 +289,7 @@ docker ps --format '{{.Names}}' | grep -w "^quest_lambda_app$"
 
 After running the Dockerfile, I got this message to display:
 
-![[Quest_Dockerfile_Output.png]]
+![](./assets/Quest_Dockerfile_Output.png)
 
 I am still unsure what type of application this is, so i am going to continue with the approach of creating a lambda function with the hopes that it isn't a web server that needs to be running at all times and a 200ms delay for cold starts is acceptable.
 
@@ -302,7 +301,7 @@ Upon further thought. I am gonna skip doing the Lambda function approach, since 
 
 After refactoring the application to use ECS and ECR, I am now running into issues deploying the Docker image to ECR & ECS with the github actions
 
-![[Rearc_Quest_GH_Action_AWS_Credentials_Error.png]]
+![](./assets/Rearc_Quest_GH_Action_AWS_Credentials_Error.png)
 
 I think the issue is that I need to setup OIDC authentication
 
@@ -325,7 +324,7 @@ aws elbv2 describe-listeners --load-balancer-arn $(aws elbv2 describe-load-balan
 
   
 
-```
+```json
 {
 
     "Listeners": [
@@ -385,7 +384,7 @@ aws elbv2 describe-listeners --load-balancer-arn $(aws elbv2 describe-load-balan
 
 I eventually got this error:
 
-```
+```json
 {
 
     "tasks": [
@@ -534,7 +533,7 @@ and this was the result:
 "awsvpc"
 ```
 
-This aligns with what I have in my [[Terraform]] ECS Task Definition where I set the `network_mode` to "awsvpc" for Fargate.
+This aligns with what I have in my Terraform ECS Task Definition where I set the `network_mode` to "awsvpc" for Fargate.
 
 I thought maybe the issue is that the task is not in a public subnet but confirmed in the Terraform that I set the network_configuration block to have `assign_public_ip` to be true and I tried to verify this with this command:
 
@@ -648,7 +647,6 @@ nslookup quest-alb-1340888362.us-east-1.elb.amazonaws.com
 returns this:
 
 ```
-
 Server:         192.168.1.1
 
 Address:        192.168.1.1#53
@@ -829,7 +827,7 @@ I added a check to the CI pipeline to not run terraform unless there are code ch
 
 I keep getting this error:
 
-![[Screenshot 2025-02-14 at 14.32.47.png]]
+![](./assets/CI_Pipeline_ECR_Error.png)
 
 The error **“invalid reference format”** in your Docker tag suggests that **ECR_PUBLIC_REGISTRY is not correctly formatted**. Based on the error log, the ECR_PUBLIC_REGISTRY variable is set as:
 
@@ -843,14 +841,14 @@ The problem is the **trailing slash (/)** in public.ecr.aws/. It should be **pub
 
 Update the environment variable assignment in my GitHub Actions workflow:
 
-```
+```yaml
       - name: Set ECR Public Registry
         run: echo "ECR_PUBLIC_REGISTRY=public.ecr.aws" >> $GITHUB_ENV
 ```
 
 And update my docker build command to use the correct format:
 
-```
+```yaml
       - name: Build and Push Docker Image to ECR Public
         env:
           ECR_PUBLIC_REGISTRY: public.ecr.aws
@@ -870,7 +868,7 @@ And update my docker build command to use the correct format:
 
 **Correct Format**
 
-```
+```sh
 docker build -t public.ecr.aws/quest-container-repository-pub:latest .
 docker push public.ecr.aws/quest-container-repository-pub:latest
 ```
@@ -882,56 +880,60 @@ After making this change, I need to rerun the GitHub Actions workflow, and it sh
 I still can't figure out what I am doing wrong here:
 
 This is what I found to solve the problem:
+
 ```
 The error "ResourceInitializationError: unable to pull secrets or registry auth: The task cannot pull registry auth from Amazon ECR: There is a connection issue between the task and Amazon ECR" indicates that your Amazon ECS task is unable to connect to Amazon ECR to pull registry authentication, which is often due to network misconfiguration[1][5][8][9]. This can occur in both EC2 and Fargate launch types[6].
+```
 
 Here are potential causes and how to address the issue:
 
-*   **Network Configuration Issues:** The task needs a network path to communicate with ECR and AWS Secrets Manager[10].
-    *   Verify the task's network configuration[1][5].
-    *   Confirm that the subnet for your worker node has a route to the internet by checking the route table[2].
-    *   If you're using a private subnet, ensure you have a NAT Gateway or VPC endpoint set up to access ECR[11].
 
-*   **Security Group Configuration:** The security group associated with your worker node must allow outbound internet traffic[2].
-    *   Ensure the security group's outbound rules allow all traffic, or specifically allow access to the necessary ports and protocols for ECR[11].
-    *   Incorrect security group settings can prevent the task from accessing the public ECR domain[9].
+*   **Network Configuration Issues:** The task needs a network path to communicate with ECR and AWS Secrets Manager[^10].
+    *   Verify the task's network configuration[^1][^5].
+    *   Confirm that the subnet for your worker node has a route to the internet by checking the route table[^2].
+    *   If you're using a private subnet, ensure you have a NAT Gateway or VPC endpoint set up to access ECR[^11].
 
-*   **IAM Permissions:** The task execution role might lack the necessary permissions to pull images from ECR[3][6].
-    *   Confirm that your `ecsTaskExecutionRole` has the `AmazonECSTaskExecutionRolePolicy` attached[6].
-    *   The trust relationship for the role should allow `ecs-tasks.amazonaws.com` to assume it[6].
-    *   If performing cross-account image pulling, the ECR repository must have permissions that specifically allow the ARN of your `ecsTaskExecutionRole`[6].
-    *   Ensure you have configured the correct policy for your user, such as `AmazonEC2ContainerRegistryFullAccess`[3].
+*   **Security Group Configuration:** The security group associated with your worker node must allow outbound internet traffic[^2].
+    *   Ensure the security group's outbound rules allow all traffic, or specifically allow access to the necessary ports and protocols for ECR[^11].
+    *   Incorrect security group settings can prevent the task from accessing the public ECR domain[^9].
 
-*   **VPC Endpoints:** If you're using a private repository, you might need to create interface VPC endpoints for Amazon ECR[2][12].
+*   **IAM Permissions:** The task execution role might lack the necessary permissions to pull images from ECR[^3][^6].
+    *   Confirm that your `ecsTaskExecutionRole` has the `AmazonECSTaskExecutionRolePolicy` attached[^6].
+    *   The trust relationship for the role should allow `ecs-tasks.amazonaws.com` to assume it[^6].
+    *   If performing cross-account image pulling, the ECR repository must have permissions that specifically allow the ARN of your `ecsTaskExecutionRole`[^6].
+    *   Ensure you have configured the correct policy for your user, such as `AmazonEC2ContainerRegistryFullAccess`[^3].
 
-*   **Repository Existence and Region:** Verify that the repository exists in the AWS ECR Console in the correct region[3].
+*   **VPC Endpoints:** If you're using a private repository, you might need to create interface VPC endpoints for Amazon ECR[^2][^12].
 
-*   **Multi-Factor Authentication (MFA):** If you're using MFA, you might need to create a session token[3].
+*   **Repository Existence and Region:** Verify that the repository exists in the AWS ECR Console in the correct region[^3].
 
-*   **Connectivity Issues:** There might be a general connection issue between the task and Amazon ECR[1]. You can verify the connectivity between the task and the endpoint[1].
+*   **Multi-Factor Authentication (MFA):** If you're using MFA, you might need to create a session token[^3].
 
-*   **Network ACLs:** The ingress and egress rules for your network access control lists (ACLs) must allow access to the internet[2].
+*   **Connectivity Issues:** There might be a general connection issue between the task and Amazon ECR[^1]. You can verify the connectivity between the task and the endpoint[^1].
 
-By checking these areas, you should be able to identify and resolve the `ResourceInitializationError` preventing your ECS task from pulling images from ECR[1][2][3][5][6][9][10][11][12].
+*   **Network ACLs:** The ingress and egress rules for your network access control lists (ACLs) must allow access to the internet[^2].
 
-Citations:
-[1] https://docs.aws.amazon.com/AmazonECS/latest/developerguide/resource-initialization-error.html
-[2] https://repost.aws/knowledge-center/eks-ecr-troubleshooting
-[3] https://stackoverflow.com/questions/70452836/docker-push-to-aws-ecr-hangs-immediately-and-times-out
-[4] https://repost.aws/knowledge-center/ecs-unable-to-pull-secrets
-[5] https://docs.aws.amazon.com/AmazonECS/latest/developerguide/stopped-tasks-error-messages-updates.html
-[6] https://repost.aws/questions/QUm1P98sRwQhquKPMbjpgA3A/not-able-to-access-private-ecr-repo-and-image
-[7] https://docs.aws.amazon.com/AmazonECR/latest/public/security_iam_troubleshoot.html
-[8] https://repost.aws/questions/QUgPLxbt2vQAmaKtwxPmlVeg/fargate-deployment-can-not-pull-from-ecr
-[9] https://www.reddit.com/r/aws/comments/1gnrmc6/fargate_cant_connect_to_ecr_despite_being_in_a/
-[10] https://stackoverflow.com/questions/61265108/aws-ecs-fargate-resourceinitializationerror-unable-to-pull-secrets-or-registry
-[11] https://repost.aws/questions/QUTTXzLlU_T72po4QROT1c2w/resourceinitializationerror-unable-to-pull-secrets-or-registry-auth-execution-resource-retrieval-failed-unable-to-retrieve-ecr-registry-auth-service-call-has-been-retried-3-time-s-requesterror
-[12] https://stackoverflow.com/questions/71659113/ecs-fargate-task-in-eventbridge-fails-with-resourceinitializationerror/71707414
-```
+By checking these areas, you should be able to identify and resolve the `ResourceInitializationError` preventing your ECS task from pulling images from ECR[^1][^2][^3][^5][^6][^9][^10][^11][^12].
+
+[^1]: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/resource-initialization-error.html
+[^2]: https://repost.aws/knowledge-center/eks-ecr-troubleshooting
+[^3]: https://stackoverflow.com/questions/70452836/docker-push-to-aws-ecr-hangs-immediately-and-times-out
+[^4]: https://repost.aws/knowledge-center/ecs-unable-to-pull-secrets
+[^5]: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/stopped-tasks-error-messages-updates.html
+[^6]: https://repost.aws/questions/QUm1P98sRwQhquKPMbjpgA3A/not-able-to-access-private-ecr-repo-and-image
+[^7]: https://docs.aws.amazon.com/AmazonECR/latest/public/security_iam_troubleshoot.html
+[^8]: https://repost.aws/questions/QUgPLxbt2vQAmaKtwxPmlVeg/fargate-deployment-can-not-pull-from-ecr
+[^9]: https://www.reddit.com/r/aws/comments/1gnrmc6/fargate_cant_connect_to_ecr_despite_being_in_a/
+[^10]: https://stackoverflow.com/questions/61265108/aws-ecs-fargate-resourceinitializationerror-unable-to-pull-secrets-or-registry
+[^11]: https://repost.aws/questions/QUTTXzLlU_T72po4QROT1c2w/resourceinitializationerror-unable-to-pull-secrets-or-registry-auth-execution-resource-retrieval-failed-unable-to-retrieve-ecr-registry-auth-service-call-has-been-retried-3-time-s-requesterror
+[^12]: https://stackoverflow.com/questions/71659113/ecs-fargate-task-in-eventbridge-fails-with-resourceinitializationerror/71707414
+
+---
 
  So I asked for help in the AltF4 Discord server and someone said that when building an ECS service you gotta assign 2 iam roles.
-1. Task Execution Role:  this is typically what the service as a whole will need things like access to a log group or certain network services or pulling the image from ECR.
-2. Task Role: this is needed if the container will use other service within like S3 to retrieve/store data
+
+1. **Task Execution Role:**  this is typically what the service as a whole will need things like access to a log group or certain network services or pulling the image from ECR.
+2. **Task Role:** this is needed if the container will use other service within like S3 to retrieve/store data
 
 I believe the task execution role is the role that is actually required to start the task
 Where as the task role itself is what the process inside needs for access to things
