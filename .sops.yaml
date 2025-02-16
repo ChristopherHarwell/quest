@@ -1,0 +1,4 @@
+creation_rules:
+  - path_regex: ssl_cert/.*\.pem$
+    encrypted_regex: '.*'
+    age: ["age1d649c7lrx8mrzhya2qg5juj4mfnddksdvkznac8vvcufrc4eqakqn4wrlk"]

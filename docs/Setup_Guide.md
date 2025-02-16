@@ -10,11 +10,12 @@ This guide provides step-by-step instructions to set up, build, and deploy the r
    - [Install Terraform](#install-terraform)  
    - [Install AWS CLI](#install-aws-cli)  
    - [Install Docker](#install-docker)  
-4. [Repository Setup](#repository-setup)  
+4. [Repository Setup](#repository-setup)
 5. [Terraform Deployment](#terraform-deployment)  
 6. [CI/CD Pipeline Overview](#cicd-pipeline-overview)  
-7. [Deploying the Service](#deploying-the-service)  
-8. [Troubleshooting](#troubleshooting)
+7. [Deploying the Service](#deploying-the-service)
+8. [Encrypting Secrets with SOPS and AGE](#encrypting-secrets-with-sops-and-age)  
+9. [Troubleshooting](#troubleshooting)
 
 ## Overview
 
@@ -180,6 +181,148 @@ git push origin master
     - The ECS service is updated with the new task definition.  
 
 Monitor the GitHub Actions logs to ensure the deployment completes successfully.
+
+## Encrypting Secrets with SOPS and AGE
+
+To securely store sensitive files such as **SSL certificates, private keys, and environment variables**, this repository uses **SOPS** (Secrets OPerationS) with **AGE** encryption. This prevents storing plaintext secrets in Git while allowing authorized users to decrypt them easily.
+
+### **Why Use SOPS & AGE?**
+- **Encrypts sensitive data before committing to Git**  
+- **Lightweight and modern encryption with AGE** (alternative to GPG)  
+- **Easy decryption using an AGE private key**  
+- **Automated encryption rules for consistent security**  
+
+### **Step 1: Install SOPS and AGE**
+#### **macOS (Using Homebrew)**
+```sh
+brew install sops age
+```
+## Table of Contents
+
+1. [Overview](#overview)  
+2. [Prerequisites](#prerequisites)  
+3. [Environment Setup](#environment-setup)  
+   - [Install Terraform](#install-terraform)  
+   - [Install AWS CLI](#install-aws-cli)  
+   - [Install Docker](#install-docker)  
+4. [Repository Setup](#repository-setup)  
+5. [Terraform Deployment](#terraform-deployment)  
+6. [CI/CD Pipeline Overview](#cicd-pipeline-overview)  
+7. [Deploying the Service](#deploying-the-service)  
+8. [Encrypting Secrets with SOPS and AGE](#encrypting-secrets-with-sops-and-age)  
+9. [Troubleshooting](#troubleshooting)  
+
+---
+
+## Encrypting Secrets with SOPS and AGE
+
+To securely store sensitive files such as **SSL certificates, private keys, and environment variables**, this repository uses **SOPS** (Secrets OPerationS) with **AGE** encryption. This prevents storing plaintext secrets in Git while allowing authorized users to decrypt them easily.
+
+### **Why Use SOPS & AGE?**
+- **Encrypts sensitive data before committing to Git**  
+- **Lightweight and modern encryption with AGE** (alternative to GPG)  
+- **Easy decryption using an AGE private key**  
+- **Automated encryption rules for consistent security**  
+
+### **Step 1: Install SOPS and AGE**
+#### **macOS (Using Homebrew)**
+```sh
+brew install sops age
+```
+
+#### Linux (Debian/Ubuntu)
+
+```sh 
+sudo apt install sops && \
+curl -Lo age.tar.gz https://github.com/FiloSottile/age/releases/latest/download/age-v1.1.1-linux-amd64.tar.gz && \
+tar -xzf age.tar.gz && \
+sudo mv age/age age/age-keygen /usr/local/bin/
+```
+
+### **Step 2: Generate an AGE Keypair**
+
+Generate an AGE encryption key:
+
+```sh
+age-keygen -o ~/.age-key.txt
+```
+
+Extract your public key:
+```sh
+cat ~/.age-key.txt | grep "public key"
+```
+
+Example output:
+```sh
+# public key: age1g8r2le3w2s8xf4hvptc3h5c5dy7ex9ksf0mpn3e9d5qv8an3t0rq42xtwa
+```
+
+Save this public key for encrypting files.
+
+### **Step 3: Encrypt Sensitive Files**
+
+Navigate to the directory containing SSL certificates:
+
+```
+cd ssl_cert/
+```
+
+Encrypt the files using your AGE public key:
+
+```sh
+sops --encrypt --age age1g8r2le3w2s8xf4hvptc3h5c5dy7ex9ksf0mpn3e9d5qv8an3t0rq42xtwa --in-place wildcard_certificate.pem && \
+sops --encrypt --age age1g8r2le3w2s8xf4hvptc3h5c5dy7ex9ksf0mpn3e9d5qv8an3t0rq42xtwa --in-place wildcard_private_key.pem && \
+sops --encrypt --age age1g8r2le3w2s8xf4hvptc3h5c5dy7ex9ksf0mpn3e9d5qv8an3t0rq42xtwa --in-place wildcard_csr.pem
+```
+
+The files are now encrypted and can be safely committed.
+
+### Step 4: Decrypt Files When Needed
+
+To view the decrypted content:
+
+```sh
+sops --decrypt wildcard_certificate.pem
+```
+
+To restore the original file:
+
+```sh
+sops --decrypt --in-place wildcard_certificate.pem
+```
+
+### **Step 5: Automate Encryption with .sops.yaml**
+
+To ensure all sensitive files are encrypted automatically, add the following .sops.yaml to the root of the repository:
+```yaml
+creation_rules:
+  - path_regex: ssl_cert/.*\.pem$
+    encrypted_regex: '.*'
+    age: ["age1g8r2le3w2s8xf4hvptc3h5c5dy7ex9ksf0mpn3e9d5qv8an3t0rq42xtwa"]
+```
+
+Now, you can encrypt all matching files with:
+```sh
+sops --encrypt --in-place ssl_cert/wildcard_*.pem
+```
+
+#### **Step 6: Commit Encrypted Files to Git**
+
+Once encrypted, you can safely commit the files:
+```sh
+git add ssl_cert/wildcard_certificate.pem ssl_cert/wildcard_private_key.pem ssl_cert/wildcard_csr.pem && \
+git commit -m "chore(security): encrypt SSL certificates using SOPS & AGE"
+```
+
+### Final Outcome
+- Sensitive files are encrypted before committing to Git.
+- Decryption is quick and secure with an AGE private key.
+- Terraform can still reference encrypted files securely.
+
+This setup ensures that SSL certificates and other secrets remain secure while allowing Terraform and GitHub Actions to use them when needed.
+
+### See also
+- [Encrypting SSL Certificates with SOPS & AGE](Encrypting_SSL_Certificates_With_SOPS_and_AGE.md)
 
 ## Troubleshooting
 ### Terraform Issues:  

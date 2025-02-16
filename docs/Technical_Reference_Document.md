@@ -22,7 +22,8 @@
      - [Networking & Subnet Challenges](#networking--subnet-challenges)  
      - [CI/CD Pipeline Refinements](#cicd-pipeline-refinements)  
      - [IAM Roles: Task Execution Role vs. Task Role](#iam-roles-task-execution-role-vs-task-role)  
-   - [5.4 Final Terraform Solution & Architecture Diagram](#54-final-terraform-solution--architecture-diagram)  
+   - [5.4 Final Terraform Solution & Architecture Diagram](#54-final-terraform-solution--architecture-diagram)
+     - Encrypting SSL Certificates with SOPS & AGE (#encrypting-ssl-certificates-with-sops-age)
 6. [Final Observations & Conclusion](#final-observations--conclusion)  
 7. [References](#references)
 
@@ -323,21 +324,30 @@ My original Terraform configuration was missing several critical settings:
 
 [![](https://mermaid.ink/img/pako:eNqVVwtv2zYQ_iuEihYdICe2_EisDkX9imMgHQLbW4DZhUBLtExEFjWJSuomBfZb9tP2S3ZHvWV7RRFAIXl3H-_N84tmC4dpprb1xLO9o6Eky_HaX_uEvH1LRrPL0ZiMhC8p91mIp1G8cUMa7IBmAW015fI23pCBLbnwI3LPA-YBbyH0BaVKctNbK2OuCz-I8BH1SEUIGazu4wiuEvs9l0QKsqeRZCHZhNS3dznbcLUMuesC4QhhtFprox2zH0UsyZwFIuJShIf12n9Pk1sv7ZT86anzy1rLJccoKfwtd-OQkcHDgoxC5jBfcupFSv45auQYGWMDT-2C8dOTUQadAOidcAn30ZrBnn4TPpmM5nU8qigNZocNT7jc__TUKsPcAMww5p5D3hHlobGwH8H82Z66DLD-_fsf4iRHG8XWkOTXkLk8kuHh4-VfMYtkw84i1Ahzv5gelUAjF1WQAO8AhVHTQospaPF74IAEEBZkwcInbuP178csskO-YTr5LBy-PejgerwcoJY0eiRjtuU-R1PLVg1Io_GRDNV3pL5j9Z2o7436ThNm5ju4UP_SXMUIpSpEZ1IWWKycQlanJb4kiArzNyafIaO474Kj_7gf1VIZTqwSywr2wFec5JYBAXwFX5Mo31tPgY1-Gs3Gc5O0mhfq77LVK7tjNn0AoZkPXvOZJFPw8zM9ZAjuc4l1vgTOOeQwA_9uPJYxhbLEtIg3gNMCzmSVMUVqZ7VqCrVAIaNSEYmYcQ7AqAEYRwDoHwwiWFYyUh3Nl4Ut6iDV9uSpUUqCPFYLZschlwdCfYfMBp9rscrIFpDIKmd-h6y5gsfc01DEQVQSSA5yCcjau6G1wFKABamymYR6Gyty0TEz3w1ZFJnkuql3Ou2yWwiWT4KR1FEVg9lRHaPdbDbLCGk5VEwAu6y58CC1V2iyWtaunHxltuLBPEt5kvskVKnFgBxjkeLd9yzc8yjC7mRiH9AJ9LFIR5yTmlSDMwgCj9sUwfKSqwWoxGLlVbk6JXgcLtDHgrBbqBJZwQ7iOvJE7DxQWXon0Oq58vK89BZkaZz3Qwv7YSU-iIvPQQ6JJ1l8EmnlMejV0Q_Cgn4feTH2wiS5UF94W5Ij0Du1shaqlJ6mSLrL7oaIHadTApPnlNrlFVu06hsautBZjvMRG3UqjcuynarQM2-lhOI50cm9COVxklYMSRp7oedJ5XMmVOBYO0XG0Jwh4Wt1jlJK_v-LFhZ3GqVyJt4J6pAh9WAKyQectBdgIzjHmfkQukLFL0ss_SUEAtt8JalU2Rfu1Mkto56EiQhnlqpzsf2gbctpvTepY1ieMLTu7EL4VBgW01O1XXoBIQd8lg5z21DsVcdPnodIDTxn20Da7vGq1wLwtVA77fw_YjhGOEqyc0gVxvp0ccf9x3QcRjseFnheGmURbMwCTxxIMhI5yTD2WsrfFGohDx46aytCInzW8NgT84jDWEB8CDpI5qWknGN7NIpgYiLuLr0NERjZcs8z3wwm495NS4fBTjwy80273U7XjWfuyJ1pBF8_VFBg9CisriANJ8NR7yeQovShmtF9GeemP7nq3_wEDg2CLBkqON3h1fCHluVI5WhUPVXcVp_Yjn1R4q1MDHVbS3wnH666TR80XdvDE0q5Az-2XlB6rckd27O1ZsLSYVsaezCurf3vwEpjKRYH39ZMGcZM16ApuDvN3MIvCtjFKsPGnEKT2uenAfX_FGKficBWM1-0r5p53b8wrntGr9_rdLr9bqurawfN7DSNi17P6HQM4_q6b3Ta3e-69k0BNC96V61m_6prdFvGVeu62dY15uBj-Tn5sah-M37_DwN4lF8?type=png)](https://mermaid.live/edit#pako:eNqVVwtv2zYQ_iuEihYdICe2_EisDkX9imMgHQLbW4DZhUBLtExEFjWJSuomBfZb9tP2S3ZHvWV7RRFAIXl3H-_N84tmC4dpprb1xLO9o6Eky_HaX_uEvH1LRrPL0ZiMhC8p91mIp1G8cUMa7IBmAW015fI23pCBLbnwI3LPA-YBbyH0BaVKctNbK2OuCz-I8BH1SEUIGazu4wiuEvs9l0QKsqeRZCHZhNS3dznbcLUMuesC4QhhtFprox2zH0UsyZwFIuJShIf12n9Pk1sv7ZT86anzy1rLJccoKfwtd-OQkcHDgoxC5jBfcupFSv45auQYGWMDT-2C8dOTUQadAOidcAn30ZrBnn4TPpmM5nU8qigNZocNT7jc__TUKsPcAMww5p5D3hHlobGwH8H82Z66DLD-_fsf4iRHG8XWkOTXkLk8kuHh4-VfMYtkw84i1Ahzv5gelUAjF1WQAO8AhVHTQospaPF74IAEEBZkwcInbuP178csskO-YTr5LBy-PejgerwcoJY0eiRjtuU-R1PLVg1Io_GRDNV3pL5j9Z2o7436ThNm5ju4UP_SXMUIpSpEZ1IWWKycQlanJb4kiArzNyafIaO474Kj_7gf1VIZTqwSywr2wFec5JYBAXwFX5Mo31tPgY1-Gs3Gc5O0mhfq77LVK7tjNn0AoZkPXvOZJFPw8zM9ZAjuc4l1vgTOOeQwA_9uPJYxhbLEtIg3gNMCzmSVMUVqZ7VqCrVAIaNSEYmYcQ7AqAEYRwDoHwwiWFYyUh3Nl4Ut6iDV9uSpUUqCPFYLZschlwdCfYfMBp9rscrIFpDIKmd-h6y5gsfc01DEQVQSSA5yCcjau6G1wFKABamymYR6Gyty0TEz3w1ZFJnkuql3Ou2yWwiWT4KR1FEVg9lRHaPdbDbLCGk5VEwAu6y58CC1V2iyWtaunHxltuLBPEt5kvskVKnFgBxjkeLd9yzc8yjC7mRiH9AJ9LFIR5yTmlSDMwgCj9sUwfKSqwWoxGLlVbk6JXgcLtDHgrBbqBJZwQ7iOvJE7DxQWXon0Oq58vK89BZkaZz3Qwv7YSU-iIvPQQ6JJ1l8EmnlMejV0Q_Cgn4feTH2wiS5UF94W5Ij0Du1shaqlJ6mSLrL7oaIHadTApPnlNrlFVu06hsautBZjvMRG3UqjcuynarQM2-lhOI50cm9COVxklYMSRp7oedJ5XMmVOBYO0XG0Jwh4Wt1jlJK_v-LFhZ3GqVyJt4J6pAh9WAKyQectBdgIzjHmfkQukLFL0ss_SUEAtt8JalU2Rfu1Mkto56EiQhnlqpzsf2gbctpvTepY1ieMLTu7EL4VBgW01O1XXoBIQd8lg5z21DsVcdPnodIDTxn20Da7vGq1wLwtVA77fw_YjhGOEqyc0gVxvp0ccf9x3QcRjseFnheGmURbMwCTxxIMhI5yTD2WsrfFGohDx46aytCInzW8NgT84jDWEB8CDpI5qWknGN7NIpgYiLuLr0NERjZcs8z3wwm495NS4fBTjwy80273U7XjWfuyJ1pBF8_VFBg9CisriANJ8NR7yeQovShmtF9GeemP7nq3_wEDg2CLBkqON3h1fCHluVI5WhUPVXcVp_Yjn1R4q1MDHVbS3wnH666TR80XdvDE0q5Az-2XlB6rckd27O1ZsLSYVsaezCurf3vwEpjKRYH39ZMGcZM16ApuDvN3MIvCtjFKsPGnEKT2uenAfX_FGKficBWM1-0r5p53b8wrntGr9_rdLr9bqurawfN7DSNi17P6HQM4_q6b3Ta3e-69k0BNC96V61m_6prdFvGVeu62dY15uBj-Tn5sah-M37_DwN4lF8)
 
-1. Final Observations & Conclusion:
-	1.	**Corepack & pnpm:**
-        - By pinning Corepack and pnpm to their latest versions in my Dockerfile, I overcame the signature validation errors during the Docker build.
-	2.	**Local Docker Conflicts:**
-        - I resolved port conflicts on port 3000 by terminating any processes using that port.
-	3.	**Lambda vs. ECS:**
-        - Although I initially tried Lambda, I ultimately pivoted to ECS due to Docker/ECR requirements and the complexities I encountered with Lambda.
-	4.	**Terraform Networking & Subnets:**
-        - Deleting or changing subnets often required manual cleanup of ELBs or other resources first. I ensured that my subnets had map_public_ip_on_launch set to true and that proper route table associations provided internet access.
-	5.	**ECS Task Pull Failures:**
-        - These were often caused by using a private ECR with missing NAT Gateway or misconfigured security groups. Switching to a public ECR simplified the process.
-	6.	**IAM Roles:**
-        - My initial mistake was setting the task_role_arn when I really needed to set the execution_role_arn. I corrected this by assigning the ECS execution role—with the attached AmazonECSTaskExecutionRolePolicy—so that ECS could pull images from ECR, write logs to CloudWatch, and launch tasks properly.
-	7.	**CI/CD Pipeline:**
-        - I refined my GitHub Actions pipeline to run Terraform only when there were changes to .tf files and ensured that environment variables (such as ECR_PUBLIC_REGISTRY) were formatted correctly without trailing slashes.
+---
+
+#### Encrypting SSL Certificates with SOPS & AGE
+- [Encrypting SSL Certificates with SOPS & AGE](./Encrypting_SSL_Certificates_With_SOPS_and_AGE.md)
+
+---
+
+#### 1. Final Observations & Conclusion:
+1. **Corepack & pnpm:**
+  - By pinning Corepack and pnpm to their latest versions in my Dockerfile, I overcame the signature validation errors during the Docker build.
+2. **Local Docker Conflicts:**
+  - I resolved port conflicts on port 3000 by terminating any processes using that port.
+3. **Lambda vs. ECS:**
+  - Although I initially tried Lambda, I ultimately pivoted to ECS due to Docker/ECR requirements and the complexities I encountered with Lambda.
+4. **Terraform Networking & Subnets:**
+  - Deleting or changing subnets often required manual cleanup of ELBs or other resources first. I ensured that my subnets had `map_public_ip_on_launch` set to true and that proper route table associations provided internet access.
+5. **ECS Task Pull Failures:**
+  - These were often caused by using a private ECR with missing NAT Gateway or misconfigured security groups. Switching to a public ECR simplified the process.
+6.	**IAM Roles:**
+  - My initial mistake was setting the task_role_arn when I really needed to set the execution_role_arn. I corrected this by assigning the ECS execution role—with the attached `AmazonECSTaskExecutionRolePolicy`—so that ECS could pull images from ECR, write logs to CloudWatch, and launch tasks properly.
+7.	**CI/CD Pipeline:**
+  - I refined my GitHub Actions pipeline to run Terraform only when there were changes to .tf files and ensured that environment variables (such as ECR_PUBLIC_REGISTRY) were formatted correctly without trailing slashes.
+8. **TLS & SSL Certificates**
+  - To enforce secure HTTPS traffic, I implemented TLS encryption for the Application Load Balancer (ALB) using self-signed SSL certificates managed with SOPS & AGE. 
 
 
 The **ECS-based approach** was chosen due to:
