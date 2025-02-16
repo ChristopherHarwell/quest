@@ -143,15 +143,41 @@ resource "aws_lb_target_group" "quest_tg" {
   }
 }
 
-# HTTP Listener
-resource "aws_lb_listener" "http_listener" {
+
+# SSL
+resource "aws_iam_server_certificate" "quest_ssl_cert" {
+  name             = "quest_ssl_cert"
+  certificate_body = file("ssl_cert/wildcard_certificate.pem")
+  private_key      = file("ssl_cert/wildcard_private_key.pem")
+}
+
+# HTTPS Listener
+resource "aws_lb_listener" "https_listener" {
+  load_balancer_arn = aws_lb.quest_alb.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = aws_iam_server_certificate.quest_ssl_cert.arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.quest_tg.arn
+  }
+}
+
+resource "aws_lb_listener" "http_redirect" {
   load_balancer_arn = aws_lb.quest_alb.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.quest_tg.arn
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
   }
 }
 
