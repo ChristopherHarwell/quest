@@ -46,53 +46,7 @@ This document provides a detailed explanation of the **approach taken** for depl
 
 The chosen architecture uses **AWS ECS with Fargate**, **Elastic Load Balancer (ALB)**, **Elastic Container Registry (ECR)**, **CloudWatch Logs**, and **Terraform** for infrastructure provisioning. The key components are outlined in the Mermaid diagram below:
 
-```mermaid
-graph TD;
-
-  subgraph AWS_Infrastructure
-    VPC["VPC quest_vpc"] -->|Has| IGW["Internet Gateway quest_gw"]
-    IGW -->|Routes Traffic| RT["Route Table quest_rt"]
-    RT -->|Connected to| Subnet1["Subnet quest_subnet_1"]
-    RT -->|Connected to| Subnet2["Subnet quest_subnet_2"]
-  end
-
-  subgraph Security_Groups
-    ALB_SG["ALB Security Group alb_sg"]
-    ECS_SG["ECS Security Group ecs_sg"]
-  end
-
-  subgraph IAM_Roles
-    ECS_Exec_Role["IAM Role ecs_task_execution"]
-  end
-
-  subgraph Elastic_Container_Registry_ECR
-    ECR["ECR Repository quest_container_repo"]
-  end
-
-  subgraph CloudWatch_Logs
-    Logs["Log Group quest_task_logs"]
-  end
-
-  subgraph Application_Load_Balancer
-    ALB["Application Load Balancer quest_alb"] -->|Forwards Traffic| TG["Target Group quest_tg"]
-    ALB_SG -->|Security Applied| ALB
-  end
-
-  subgraph ECS_Cluster_Group
-    ECS_Cluster["ECS Cluster quest_ecs"] -->|Manages| ECS_Service["ECS Service quest_service"]
-    ECS_Service -->|Runs| ECS_Task["ECS Task quest_task"]
-    ECS_Service -->|Registers to| TG
-    ECS_Service --> ECS_SG
-    ECS_Task -->|Logs to| Logs
-    ECS_Task -->|Pulls Image from| ECR
-    ECS_Task -->|Uses IAM Role| ECS_Exec_Role
-  end
-
-  Subnet1 -->|Networking| ALB
-  Subnet2 -->|Networking| ALB
-  Subnet1 -->|Networking| ECS_Service
-  Subnet2 -->|Networking| ECS_Service
-```
+[![](https://mermaid.ink/img/pako:eNqNVV1v2jAU_SuWn2kFKVBg0iRKGUNqpypkq7QxRcYxIWqwM3-UstL_vmvHCdCWai9g-55z77XPsfOMqUgYHuBUkmKFoutPcz7nCCmzKFeG97N4ypeSKC0N1UYyG0box93o1xzDL_pjmNLxY0Hn-Dc6O_u8-0rUDk0n9xCfcs0kZxpNiGYbsvXgdAPYMg_gHCkURjOFIkmWy4zuUBgB3S2iiCxy5plS18wwcsSR4JxRzRKkxQ7NzALKtYBbjjxNuUnc-h9ycIIceDLjyaszmjFqZKa38UQKU6iywvDmKp5NIBcMagRyCETyRazSupnxaFZCYfAayqjaQ9-Wng5v41DkTO0zjZ8YdWv2_Ie3yA5dGk3UQ8wganQm-MmU4xy0zmgMZ6NJxpmMQ5ZmIP82Ho_Cqk7o2g1RyAqhMi1kpS2taRJCJ6uMcmGSe6LpKr4RqW_fjiAv_Pndlyld47lFnco2LIo8o8TuC9KRJL4iOeGUyVoLK8QehCwIVSBfBlSpLPxFyA2RyYEfI6tPRGRqzXzY217GUnHHr0V0NVmys8ETxw2SjXKj4KKU_tkr6Ze9MfzM1wVBq2ZvCScpgzvnfMTkY0ZZbSY3q4xczo595xHuDhrus0Rw4j6FHR7ocJrsTMKkclcpmryL8lbfx1x2S7fSO-beDUfxO5PnCk3XsFO0lGJt-wzfwX1X8IpUtt8dX4gjAfxL4UjfmN4I-ZDxtBbKvwUfh9-yD_b7UZYDGG7gNZNrkiXwCj9b0hzrFVuDTAMYJmxJTA6v3py_AJQYLWZbTvEAnmPWwGCYdIUHS5IrmJkigXf2OiNgrXW9WhD-U4h1RYEpHjzjJzzo9c-DXjfo9rvtdqffaXUaeIsH7WZw3u0G7XYQ9Hr9oH3ReWngvy5B87x72Wr2Lzuty2brotPu9xqYJfb235ZfEfcxefkHrSAgpg?type=png)](https://mermaid.live/edit#pako:eNqNVV1v2jAU_SuWn2kFKVBg0iRKGUNqpypkq7QxRcYxIWqwM3-UstL_vmvHCdCWai9g-55z77XPsfOMqUgYHuBUkmKFoutPcz7nCCmzKFeG97N4ypeSKC0N1UYyG0box93o1xzDL_pjmNLxY0Hn-Dc6O_u8-0rUDk0n9xCfcs0kZxpNiGYbsvXgdAPYMg_gHCkURjOFIkmWy4zuUBgB3S2iiCxy5plS18wwcsSR4JxRzRKkxQ7NzALKtYBbjjxNuUnc-h9ycIIceDLjyaszmjFqZKa38UQKU6iywvDmKp5NIBcMagRyCETyRazSupnxaFZCYfAayqjaQ9-Wng5v41DkTO0zjZ8YdWv2_Ie3yA5dGk3UQ8wganQm-MmU4xy0zmgMZ6NJxpmMQ5ZmIP82Ho_Cqk7o2g1RyAqhMi1kpS2taRJCJ6uMcmGSe6LpKr4RqW_fjiAv_Pndlyld47lFnco2LIo8o8TuC9KRJL4iOeGUyVoLK8QehCwIVSBfBlSpLPxFyA2RyYEfI6tPRGRqzXzY217GUnHHr0V0NVmys8ETxw2SjXKj4KKU_tkr6Ze9MfzM1wVBq2ZvCScpgzvnfMTkY0ZZbSY3q4xczo595xHuDhrus0Rw4j6FHR7ocJrsTMKkclcpmryL8lbfx1x2S7fSO-beDUfxO5PnCk3XsFO0lGJt-wzfwX1X8IpUtt8dX4gjAfxL4UjfmN4I-ZDxtBbKvwUfh9-yD_b7UZYDGG7gNZNrkiXwCj9b0hzrFVuDTAMYJmxJTA6v3py_AJQYLWZbTvEAnmPWwGCYdIUHS5IrmJkigXf2OiNgrXW9WhD-U4h1RYEpHjzjJzzo9c-DXjfo9rvtdqffaXUaeIsH7WZw3u0G7XYQ9Hr9oH3ReWngvy5B87x72Wr2Lzuty2brotPu9xqYJfb235ZfEfcxefkHrSAgpg)
 ### 2.2 Justification for the Approach Taken
 
 Initially, the plan was to deploy the application as an **AWS Lambda function**. However, after evaluating constraints and requirements, I transitioned to an **ECS (Elastic Container Service) approach using AWS Fargate**.
@@ -172,41 +126,8 @@ Because of these complications—and since one of the requirements was to use a 
 
 **Original Lambda-Based Architecture Diagram:**
 
-```mermaid
-graph TD;
-    subgraph AWS_Infrastructure
-        subgraph Network
-            VPC[VPC] -->|Contains| Subnets[Public & Private Subnets]
-            Subnets --> SecurityGroups[Security Groups]
-        end
-        
-        subgraph Compute
-            Lambda[Lambda Function] --> IAMRole[Execution IAM Role]
-        end
-        
-        subgraph Storage
-            S3_State[S3 Bucket - Terraform State] --> DynamoDB[State Locking - DynamoDB]
-            S3_Lambda[S3 Bucket - Lambda ZIP] --> Lambda
-        end
-        
-        subgraph IAM
-            IAMRole -->|Grants permissions to| Lambda
-            IAMRole -->|Accesses| CloudWatch[CloudWatch Logs]
-        end
-        
-        subgraph Load_Balancer
-            ALB[Application Load Balancer] -->|Routes Traffic| TargetGroup[Target Group]
-            TargetGroup -->|Forwards Requests| Lambda
-        end
-    end
+[![](https://mermaid.ink/img/pako:eNqVVG1rIjEQ_ish0Ptki66r1T048OVaBHuIK1foKhKzo4a6yV5e2lr1v192o9W1J1wDy87Lk5nMzJNsMBUx4AAvJEmXaNT9PubILmVmztJ6DKc9PpdEaWmoNhIcoAD6BfpVyOejJ1u_B53IfhN0ff1j2xFcE8bVFoVmxkGraGBmK0bRNzSQ7IVoODgmxSh7axYEhUCNZHp9L4VJVXRQkdNPNgKPj8o_ztsRSWo0FDP1STKLSeR-6M5wqpng-fFRr_UwFCuIfr7ZnJk5s6DM9IWsoRaSLM6yhtVpqG35UVhFbUOfQaNrNAIpyVzIBOU-d4bumpNEdNtRbkN9QZ8ZX1j0wTH5FHlf0mnofXlPvYGL6vT_L8LWXUyzb00-5XtJuJ1VCjJhStk2KaTF9lOO820tSkEpsOTorISJH4mmy-go2lIXX5luX5B42iYrwinIYtZWvx210tQSj-RTzKDoAHVMHQrLDIVGdgBzRrdoROQCdE6xyMmOb2fdPoHlYe6EfCUyVmgIfwworbaXW50LTry6Qg8iNrYxMaTWDpwyUM73wYroyI8e2V-wgRQvLG_5tngdj9hzWOEWXIYVaHsZ9kGMy5DCYHAJJ5YnhMX29dlkW8dYLyGBMQ6sGMOcmJUe4zHfWSgxWoRrTnFgnyEoYdvnxRIHc7JSVjNpbK9ElxFLgOQASQl_EuJUxcEGv-Gg0bzxGnWv3qz7fq1Zq9RKeI0Dv-zd1Oue73teo9H0_GptV8LveYDyTf22Um7e1iq35Uq15jcbJQwxs315cI9n_obu_gLwvKWQ?type=png)](https://mermaid.live/edit#pako:eNqVVG1rIjEQ_ish0Ptki66r1T048OVaBHuIK1foKhKzo4a6yV5e2lr1v192o9W1J1wDy87Lk5nMzJNsMBUx4AAvJEmXaNT9PubILmVmztJ6DKc9PpdEaWmoNhIcoAD6BfpVyOejJ1u_B53IfhN0ff1j2xFcE8bVFoVmxkGraGBmK0bRNzSQ7IVoODgmxSh7axYEhUCNZHp9L4VJVXRQkdNPNgKPj8o_ztsRSWo0FDP1STKLSeR-6M5wqpng-fFRr_UwFCuIfr7ZnJk5s6DM9IWsoRaSLM6yhtVpqG35UVhFbUOfQaNrNAIpyVzIBOU-d4bumpNEdNtRbkN9QZ8ZX1j0wTH5FHlf0mnofXlPvYGL6vT_L8LWXUyzb00-5XtJuJ1VCjJhStk2KaTF9lOO820tSkEpsOTorISJH4mmy-go2lIXX5luX5B42iYrwinIYtZWvx210tQSj-RTzKDoAHVMHQrLDIVGdgBzRrdoROQCdE6xyMmOb2fdPoHlYe6EfCUyVmgIfwworbaXW50LTry6Qg8iNrYxMaTWDpwyUM73wYroyI8e2V-wgRQvLG_5tngdj9hzWOEWXIYVaHsZ9kGMy5DCYHAJJ5YnhMX29dlkW8dYLyGBMQ6sGMOcmJUe4zHfWSgxWoRrTnFgnyEoYdvnxRIHc7JSVjNpbK9ElxFLgOQASQl_EuJUxcEGv-Gg0bzxGnWv3qz7fq1Zq9RKeI0Dv-zd1Oue73teo9H0_GptV8LveYDyTf22Um7e1iq35Uq15jcbJQwxs315cI9n_obu_gLwvKWQ)
 
-    %% Module dependencies
-    Terraform[Terraform IaC] -->|Provisions| Network
-    Terraform -->|Provisions| Compute
-    Terraform -->|Provisions| Storage
-    Terraform -->|Provisions| IAM
-    Terraform -->|Provisions| Load_Balancer
-```
 ### 5.2 Building a Docker Container
 
 #### Corepack/Pnpm Error and Resolution
