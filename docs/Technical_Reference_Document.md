@@ -23,7 +23,7 @@
      - [CI/CD Pipeline Refinements](#cicd-pipeline-refinements)  
      - [IAM Roles: Task Execution Role vs. Task Role](#iam-roles-task-execution-role-vs-task-role)  
    - [5.4 Final Terraform Solution & Architecture Diagram](#54-final-terraform-solution--architecture-diagram)
-     - Encrypting SSL Certificates with SOPS & AGE (#encrypting-ssl-certificates-with-sops-age)
+     - [Encrypting SSL Certificates with SOPS & AGE](#encrypting-ssl-certificates-with-sops-age)
 6. [Final Observations & Conclusion](#final-observations--conclusion)  
 7. [References](#references)
 
