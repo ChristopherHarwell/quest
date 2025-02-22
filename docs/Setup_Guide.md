@@ -197,22 +197,6 @@ To securely store sensitive files such as **SSL certificates, private keys, and 
 ```sh
 brew install sops age
 ```
-## Table of Contents
-
-1. [Overview](#overview)  
-2. [Prerequisites](#prerequisites)  
-3. [Environment Setup](#environment-setup)  
-   - [Install Terraform](#install-terraform)  
-   - [Install AWS CLI](#install-aws-cli)  
-   - [Install Docker](#install-docker)  
-4. [Repository Setup](#repository-setup)  
-5. [Terraform Deployment](#terraform-deployment)  
-6. [CI/CD Pipeline Overview](#cicd-pipeline-overview)  
-7. [Deploying the Service](#deploying-the-service)  
-8. [Encrypting Secrets with SOPS and AGE](#encrypting-secrets-with-sops-and-age)  
-9. [Troubleshooting](#troubleshooting)  
-
----
 
 ## Encrypting Secrets with SOPS and AGE
 
