@@ -198,22 +198,6 @@ To securely store sensitive files such as **SSL certificates, private keys, and 
 brew install sops age
 ```
 
-## Encrypting Secrets with SOPS and AGE
-
-To securely store sensitive files such as **SSL certificates, private keys, and environment variables**, this repository uses **SOPS** (Secrets OPerationS) with **AGE** encryption. This prevents storing plaintext secrets in Git while allowing authorized users to decrypt them easily.
-
-### **Why Use SOPS & AGE?**
-- **Encrypts sensitive data before committing to Git**  
-- **Lightweight and modern encryption with AGE** (alternative to GPG)  
-- **Easy decryption using an AGE private key**  
-- **Automated encryption rules for consistent security**  
-
-### **Step 1: Install SOPS and AGE**
-#### **macOS (Using Homebrew)**
-```sh
-brew install sops age
-```
-
 #### Linux (Debian/Ubuntu)
 
 ```sh 
