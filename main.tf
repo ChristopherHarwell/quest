@@ -1,3 +1,7 @@
+####################################################
+# Root-level main.tf
+####################################################
+
 terraform {
   required_providers {
     aws = {
@@ -12,9 +16,19 @@ provider "aws" {
   profile = "default"
 }
 
-# -----------------------------
+#
+# Call the VPC module
+#
+module "vpc" {
+  source               = "./modules/vpc"
+  vpc_cidr             = "10.0.0.0/16"
+  public_subnet_cidr_1 = "10.0.1.0/24"
+  public_subnet_cidr_2 = "10.0.2.0/24"
+}
+
+#
 # ECS Cluster
-# -----------------------------
+#
 resource "aws_ecs_cluster" "quest_ecs" {
   name = "quest-ecs-cluster"
 }
@@ -102,7 +116,8 @@ resource "aws_ecs_service" "quest_service" {
   desired_count   = 1
 
   network_configuration {
-    subnets          = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id]
+    # Use the module outputs for the subnets
+    subnets          = module.vpc.public_subnet_ids
     security_groups  = [aws_security_group.ecs_sg.id]
     assign_public_ip = true
   }
@@ -122,7 +137,8 @@ resource "aws_lb" "quest_alb" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
-  subnets            = [aws_subnet.quest_subnet_1.id, aws_subnet.quest_subnet_2.id]
+  # Use the module outputs for subnets
+  subnets            = module.vpc.public_subnet_ids
 }
 
 # Target Group for Load Balancer
@@ -130,7 +146,8 @@ resource "aws_lb_target_group" "quest_tg" {
   name        = "quest-target-group"
   port        = 3000
   protocol    = "HTTP"
-  vpc_id      = aws_vpc.quest_vpc.id
+  # Use the module output for the VPC ID
+  vpc_id      = module.vpc.vpc_id
   target_type = "ip"
 
   health_check {
@@ -186,7 +203,8 @@ resource "aws_lb_listener" "http_redirect" {
 # -----------------------------
 resource "aws_security_group" "alb_sg" {
   name   = "quest-alb-sg"
-  vpc_id = aws_vpc.quest_vpc.id
+  # Use the module output for the VPC ID
+  vpc_id = module.vpc.vpc_id
 
   ingress {
     from_port   = 80
@@ -210,7 +228,7 @@ resource "aws_security_group" "alb_sg" {
 
 resource "aws_security_group" "ecs_sg" {
   name   = "quest-ecs-sg"
-  vpc_id = aws_vpc.quest_vpc.id
+  vpc_id = module.vpc.vpc_id
 
   ingress {
     from_port   = 3000
@@ -254,59 +272,19 @@ resource "aws_iam_role_policy" "ecs_execution_policy" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["ecr:GetAuthorizationToken", "ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage", "logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Action   = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
         Resource = "*"
       }
     ]
   })
-}
-
-# -----------------------------
-# VPC & Subnets
-# -----------------------------
-resource "aws_vpc" "quest_vpc" {
-  cidr_block = "10.0.0.0/16"
-}
-
-data "aws_availability_zones" "available" {}
-
-resource "aws_subnet" "quest_subnet_1" {
-  vpc_id                  = aws_vpc.quest_vpc.id
-  cidr_block              = "10.0.1.0/24"
-  availability_zone       = data.aws_availability_zones.available.names[0]
-  map_public_ip_on_launch = true
-
-}
-
-resource "aws_subnet" "quest_subnet_2" {
-  vpc_id                  = aws_vpc.quest_vpc.id
-  cidr_block              = "10.0.2.0/24"
-  availability_zone       = data.aws_availability_zones.available.names[1]
-  map_public_ip_on_launch = true
-
-}
-
-resource "aws_route_table_association" "quest_assoc_1" {
-  subnet_id      = aws_subnet.quest_subnet_1.id
-  route_table_id = aws_route_table.quest_rt.id
-}
-
-resource "aws_route_table_association" "quest_assoc_2" {
-  subnet_id      = aws_subnet.quest_subnet_2.id
-  route_table_id = aws_route_table.quest_rt.id
-}
-
-resource "aws_internet_gateway" "quest_gw" {
-  vpc_id = aws_vpc.quest_vpc.id
-}
-
-resource "aws_route_table" "quest_rt" {
-  vpc_id = aws_vpc.quest_vpc.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.quest_gw.id
-  }
 }
 
 # -----------------------------
