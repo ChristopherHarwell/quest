@@ -119,47 +119,13 @@ resource "aws_security_group" "ecs_sg" {
   }
 }
 
-# -----------------------------
-# IAM Roles & Policies for ECS
-# -----------------------------
-resource "aws_iam_role" "ecs_task_execution" {
-  name = "quest-ecs-task-execution-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-        Action = "sts:AssumeRole"
-      }
-    ]
-  })
+module "iam_ecs" {
+  source        = "./modules/iam"
+  iam_role_name = "quest-ecs-task-execution-role"
 }
 
-resource "aws_iam_role_policy" "ecs_execution_policy" {
-  role = aws_iam_role.ecs_task_execution.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
+resource "aws_ecs_task_definition" "quest_task" {
+  execution_role_arn = module.iam_ecs.iam_role_arn
 }
 
 # -----------------------------
