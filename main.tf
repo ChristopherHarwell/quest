@@ -35,7 +35,7 @@ module "ecs" {
   security_group_ids = [module.security_groups.ecs_sg_id]
 
   ecr_repository_url = aws_ecr_repository.quest_container_repo.repository_url
-  log_group_name     = aws_cloudwatch_log_group.quest_task_logs.name
+  log_group_name     = module.logs.log_group_name
   aws_region         = var.aws_region
 
   desired_count = 1
@@ -43,11 +43,11 @@ module "ecs" {
   memory        = 512
   container_port = 3000
 }
-# -----------------------------
-# CloudWatch Log Group
-# -----------------------------
-resource "aws_cloudwatch_log_group" "quest_task_logs" {
-  name = "quest-ecs-task-logs"
+
+module "logs" {
+  source          = "./modules/logs"
+  log_group_name  = "quest-ecs-task-logs"
+  retention_in_days = 7
 }
 
 module "ecr" {
