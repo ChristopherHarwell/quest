@@ -39,6 +39,7 @@ variable "log_group_name" {
 variable "aws_region" {
   type        = string
   description = "AWS Region"
+  default     = "us-east-2"
 }
 
 variable "desired_count" {
