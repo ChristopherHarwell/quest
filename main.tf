@@ -20,19 +20,29 @@ provider "aws" {
 # Call the VPC module
 #
 module "vpc" {
-  source               = "./modules/vpc"
+  source               = "./infra/modules/vpc"
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidr_1 = "10.0.1.0/24"
   public_subnet_cidr_2 = "10.0.2.0/24"
 }
 
-#
-# ECS Cluster
-#
-resource "aws_ecs_cluster" "quest_ecs" {
-  name = "quest-ecs-cluster"
-}
 
+module "ecs" {
+  source             = "./modules/ecs"
+  cluster_name       = "quest-ecs-cluster"
+  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  subnet_ids         = module.vpc.public_subnet_ids
+  security_group_ids = [aws_security_group.ecs_sg.id]
+
+  ecr_repository_url = aws_ecr_repository.quest_container_repo.repository_url
+  log_group_name     = aws_cloudwatch_log_group.quest_task_logs.name
+  aws_region         = var.aws_region
+
+  desired_count = 1
+  cpu           = 256
+  memory        = 512
+  container_port = 3000
+}
 # -----------------------------
 # CloudWatch Log Group
 # -----------------------------
@@ -69,65 +79,7 @@ resource "aws_ecr_repository_policy" "quest_ecr_policy" {
 }
 
 
-# -----------------------------
-# ECS Task Definition
-# -----------------------------
-resource "aws_ecs_task_definition" "quest_task" {
-  family                   = "quest-task"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
-  cpu                      = 256
-  memory                   = 512
-
-  container_definitions = jsonencode([
-    {
-      name      = "quest-container"
-      image     = "${aws_ecr_repository.quest_container_repo.repository_url}:latest"
-      essential = true
-      memory    = 128
-      portMappings = [
-        {
-          containerPort = 3000
-          hostPort      = 3000
-          protocol      = "tcp"
-        }
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.quest_task_logs.name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "ecs"
-        }
-      }
-    }
-  ])
-}
-
-# -----------------------------
-# ECS Service
-# -----------------------------
-resource "aws_ecs_service" "quest_service" {
-  name            = "quest-service"
-  cluster         = aws_ecs_cluster.quest_ecs.id
-  task_definition = aws_ecs_task_definition.quest_task.arn
-  launch_type     = "FARGATE"
-  desired_count   = 1
-
-  network_configuration {
-    # Use the module outputs for the subnets
-    subnets          = module.vpc.public_subnet_ids
-    security_groups  = [aws_security_group.ecs_sg.id]
-    assign_public_ip = true
-  }
-
-  load_balancer {
-    target_group_arn = aws_lb_target_group.quest_tg.arn
-    container_name   = "quest-container"
-    container_port   = 3000
-  }
-}
+# ALB
 
 # -----------------------------
 # Application Load Balancer (ALB)
@@ -159,6 +111,8 @@ resource "aws_lb_target_group" "quest_tg" {
     matcher             = "200"
   }
 }
+
+
 
 
 # SSL
