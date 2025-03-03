@@ -50,32 +50,11 @@ resource "aws_cloudwatch_log_group" "quest_task_logs" {
   name = "quest-ecs-task-logs"
 }
 
-# -----------------------------
-# Elastic Container Registry (ECR)
-# -----------------------------
-resource "aws_ecr_repository" "quest_container_repo" {
-  name = "quest-container-repository"
-}
-
-resource "aws_ecr_repository_policy" "quest_ecr_policy" {
-  repository = aws_ecr_repository.quest_container_repo.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect    = "Allow"
-        Principal = { "AWS" : aws_iam_role.ecs_task_execution.arn }
-        Action    = [
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:DescribeRepositories",
-          "ecr:GetRepositoryPolicy"
-        ]
-      }
-    ]
-  })
+module "ecr" {
+  source                  = "./modules/ecr"
+  repo_name              = "quest-container-repository"
+  execution_role_arn     = aws_iam_role.ecs_task_execution.arn
+  enable_repository_policy = true
 }
 
 module "alb" {
