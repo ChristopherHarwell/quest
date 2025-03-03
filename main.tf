@@ -32,7 +32,7 @@ module "ecs" {
   cluster_name       = "quest-ecs-cluster"
   execution_role_arn = aws_iam_role.ecs_task_execution.arn
   subnet_ids         = module.vpc.public_subnet_ids
-  security_group_ids = [aws_security_group.ecs_sg.id]
+  security_group_ids = [module.security_groups.ecs_sg_id]
 
   ecr_repository_url = aws_ecr_repository.quest_container_repo.repository_url
   log_group_name     = aws_cloudwatch_log_group.quest_task_logs.name
@@ -60,7 +60,7 @@ module "ecr" {
 module "alb" {
   source                = "./modules/alb"
   alb_name             = "quest-alb"
-  security_groups      = [aws_security_group.alb_sg.id]
+  security_groups      = [module.security_groups.alb_sg_id]
   subnet_ids           = module.vpc.public_subnet_ids
   internal             = false
   vpc_id               = module.vpc.vpc_id
@@ -73,50 +73,12 @@ module "alb" {
   health_check_path    = "/"
 }
 
-# -----------------------------
-# Security Groups
-# -----------------------------
-resource "aws_security_group" "alb_sg" {
-  name   = "quest-alb-sg"
-  # Use the module output for the VPC ID
-  vpc_id = module.vpc.vpc_id
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-resource "aws_security_group" "ecs_sg" {
-  name   = "quest-ecs-sg"
-  vpc_id = module.vpc.vpc_id
-
-  ingress {
-    from_port   = 3000
-    to_port     = 3000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+module "security_groups" {
+  source             = "./modules/security_groups"
+  vpc_id             = module.vpc.vpc_id
+  alb_sg_name        = "quest-alb-sg"
+  ecs_sg_name        = "quest-ecs-sg"
+  ecs_container_port = 3000
 }
 
 module "iam_ecs" {
