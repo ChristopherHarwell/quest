@@ -14,20 +14,9 @@ output "public_subnet_ids" {
 }
 
 # ALB Outputs
-output "alb_dns_name" {
-  description = "DNS name of the Application Load Balancer"
-  value       = module.alb.alb_dns_name
-}
-
 output "alb_target_group_arn" {
   description = "ARN of the ALB target group"
   value       = module.alb.target_group_arn
-}
-
-# ECR Outputs
-output "ecr_repository_url" {
-  description = "URL of the ECR repository"
-  value       = module.ecr.repository_url
 }
 
 # ECS Outputs
