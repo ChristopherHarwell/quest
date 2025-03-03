@@ -1,66 +1,72 @@
 ####################################################
-# ECS module variables.tf
+# ALB module variables.tf
 ####################################################
 
-variable "cluster_name" {
+variable "alb_name" {
   type        = string
-  description = "Name of the ECS cluster"
-  default     = "quest-ecs-cluster"
+  description = "Name of the Application Load Balancer"
+  default     = "quest-alb"
 }
 
-variable "execution_role_arn" {
-  type        = string
-  description = "IAM execution role ARN for ECS tasks"
+variable "security_groups" {
+  type        = list(string)
+  description = "List of security group IDs to attach to the ALB"
+  default     = []
 }
 
 variable "subnet_ids" {
   type        = list(string)
-  description = "List of subnet IDs where the ECS tasks should run"
+  description = "List of subnet IDs for the ALB"
   default     = []
 }
 
-variable "security_group_ids" {
-  type        = list(string)
-  description = "Security group IDs for the ECS tasks"
-  default     = []
+variable "internal" {
+  type        = bool
+  description = "Whether the ALB should be internal (true) or public (false)"
+  default     = false
 }
 
-variable "ecr_repository_url" {
+variable "vpc_id" {
   type        = string
-  description = "ECR repository URL to pull container images from"
+  description = "VPC ID for the target group"
 }
 
-variable "log_group_name" {
+variable "certificate_body_file" {
   type        = string
-  description = "Name of the CloudWatch Log Group"
-  default     = "quest-ecs-task-logs"
+  description = "Path to the SSL certificate body file"
 }
 
-variable "aws_region" {
+variable "private_key_file" {
   type        = string
-  description = "AWS Region"
+  description = "Path to the SSL certificate private key file"
 }
 
-variable "desired_count" {
+variable "listener_port_https" {
   type        = number
-  description = "Number of tasks to run in the ECS service"
-  default     = 1
+  description = "Port for the HTTPS listener"
+  default     = 443
 }
 
-variable "cpu" {
+variable "listener_port_http" {
   type        = number
-  description = "CPU units for the Task Definition"
-  default     = 256
+  description = "Port for the HTTP listener (for redirect)"
+  default     = 80
 }
 
-variable "memory" {
-  type        = number
-  description = "Memory (MB) for the Task Definition"
-  default     = 512
+variable "target_group_name" {
+  type        = string
+  description = "Name of the target group"
+  default     = "quest-target-group"
 }
 
-variable "container_port" {
+variable "target_group_port" {
   type        = number
-  description = "Port on the container to receive traffic"
+  description = "Target group port"
   default     = 3000
+}
+
+variable "health_check_path" {
+  type        = string
+  description = "Health check path for the target group"
+  default     = "/"
 }

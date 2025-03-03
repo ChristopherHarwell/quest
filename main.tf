@@ -20,7 +20,7 @@ provider "aws" {
 # Call the VPC module
 #
 module "vpc" {
-  source               = "./infra/modules/vpc"
+  source               = "./modules/vpc"
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidr_1 = "10.0.1.0/24"
   public_subnet_cidr_2 = "10.0.2.0/24"
@@ -78,78 +78,20 @@ resource "aws_ecr_repository_policy" "quest_ecr_policy" {
   })
 }
 
-
-# ALB
-
-# -----------------------------
-# Application Load Balancer (ALB)
-# -----------------------------
-resource "aws_lb" "quest_alb" {
-  name               = "quest-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb_sg.id]
-  # Use the module outputs for subnets
-  subnets            = module.vpc.public_subnet_ids
-}
-
-# Target Group for Load Balancer
-resource "aws_lb_target_group" "quest_tg" {
-  name        = "quest-target-group"
-  port        = 3000
-  protocol    = "HTTP"
-  # Use the module output for the VPC ID
-  vpc_id      = module.vpc.vpc_id
-  target_type = "ip"
-
-  health_check {
-    path                = "/"
-    healthy_threshold   = 3
-    unhealthy_threshold = 2
-    timeout             = 5
-    interval            = 30
-    matcher             = "200"
-  }
-}
-
-
-
-
-# SSL
-resource "aws_iam_server_certificate" "quest_ssl_cert" {
-  name             = "quest_ssl_cert"
-  certificate_body = file("ssl_cert/wildcard_certificate.pem")
-  private_key      = file("ssl_cert/wildcard_private_key.pem")
-}
-
-# HTTPS Listener
-resource "aws_lb_listener" "https_listener" {
-  load_balancer_arn = aws_lb.quest_alb.arn
-  port              = 443
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = aws_iam_server_certificate.quest_ssl_cert.arn
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.quest_tg.arn
-  }
-}
-
-resource "aws_lb_listener" "http_redirect" {
-  load_balancer_arn = aws_lb.quest_alb.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type = "redirect"
-
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
-  }
+module "alb" {
+  source                = "./modules/alb"
+  alb_name             = "quest-alb"
+  security_groups      = [aws_security_group.alb_sg.id]
+  subnet_ids           = module.vpc.public_subnet_ids
+  internal             = false
+  vpc_id               = module.vpc.vpc_id
+  certificate_body_file = "ssl_cert/wildcard_certificate.pem"
+  private_key_file      = "ssl_cert/wildcard_private_key.pem"
+  listener_port_https  = 443
+  listener_port_http   = 80
+  target_group_name    = "quest-target-group"
+  target_group_port    = 3000
+  health_check_path    = "/"
 }
 
 # -----------------------------
