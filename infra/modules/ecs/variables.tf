@@ -1,6 +1,11 @@
 ####################################################
 # ECS module variables.tf
 ####################################################
+variable "task_family_cluster_name" {
+  type        = string
+  description = "Name of the family for the ECS Task Definition"
+  default     = "quest-ecs-task"
+}
 
 variable "cluster_name" {
   type        = string

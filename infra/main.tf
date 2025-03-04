@@ -30,12 +30,12 @@ module "vpc" {
 module "ecs" {
   source             = "./modules/ecs"
   cluster_name       = "quest-ecs-cluster"
-  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  execution_role_arn = module.iam_ecs.iam_role_arn
   subnet_ids         = module.vpc.public_subnet_ids
-  security_group_ids = [module.security_groups.ecs_sg_id]
+  security_group_ids = [module.security_groups.ecs_sg.id]
 
-  ecr_repository_url = aws_ecr_repository.quest_container_repo.repository_url
-  log_group_name     = module.logs.log_group_name
+  ecr_repository_url = module.ecr.repository_url
+  log_group_name     = module.logs.log_groups_name
   aws_region         = var.aws_region
 
   desired_count = 1
@@ -48,19 +48,20 @@ module "logs" {
   source          = "./modules/logs"
   log_group_name  = "quest-ecs-task-logs"
   retention_in_days = 7
+  
 }
 
 module "ecr" {
   source                  = "./modules/ecr"
   repo_name              = "quest-container-repository"
-  execution_role_arn     = aws_iam_role.ecs_task_execution.arn
+  execution_role_arn = module.iam_ecs.iam_role_arn
   enable_repository_policy = true
 }
 
 module "alb" {
   source                = "./modules/alb"
   alb_name             = "quest-alb"
-  security_groups      = [module.security_groups.alb_sg_id]
+  security_groups      = [module.security_groups.alb_sg.id]
   subnet_ids           = module.vpc.public_subnet_ids
   internal             = false
   vpc_id               = module.vpc.vpc_id
@@ -76,9 +77,6 @@ module "alb" {
 module "security_groups" {
   source             = "./modules/security_groups"
   vpc_id             = module.vpc.vpc_id
-  alb_sg_name        = "quest-alb-sg"
-  ecs_sg_name        = "quest-ecs-sg"
-  ecs_container_port = 3000
 }
 
 module "iam_ecs" {
@@ -90,23 +88,3 @@ resource "aws_ecs_task_definition" "quest_task" {
   execution_role_arn = module.iam_ecs.iam_role_arn
 }
 
-# -----------------------------
-# Variables
-# -----------------------------
-variable "aws_region" {
-  description = "AWS region for deployment"
-  type        = string
-}
-
-# -----------------------------
-# Outputs
-# -----------------------------
-output "alb_dns_name" {
-  description = "Load Balancer DNS Name"
-  value       = aws_lb.quest_alb.dns_name
-}
-
-output "ecr_repository_url" {
-  description = "ECR repository URL"
-  value       = aws_ecr_repository.quest_container_repo.repository_url
-}
